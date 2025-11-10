@@ -1,0 +1,17 @@
+telegram:
+  bot_token: "<your-telegram-bot-token>"
+  webhook_url: ""
+yandex:
+  gpt_api_key: "<your-yandex-gpt-key>"
+  folder_id: "<your-yandex-folder-id>"
+  gpt_base_url: "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
+jwt:
+  secret_key: "<your-jwt-secret>"
+  algorithm: "HS256"
+  access_token_expire_minutes: 30
+backend:
+  base_url: "https://api.example.com"
+supabase:
+  url: "https://your-project.supabase.co"
+  anon_key: "<your-supabase-anon-key>"
+  service_key: "<your-supabase-service-key>"

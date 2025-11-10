@@ -1,0 +1,677 @@
+const SUPABASE_URL = 'https://dcxdnrealygulikpuicm.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjeGRucmVhbHlndWxpa3B1aWNtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI0NTcwODAsImV4cCI6MjA3ODAzMzA4MH0.M2dsaKFDCnd0w-QCMsHu42KmRKURhvhhwMazM1ybO9Y';
+const DEV_BACKEND_HOST = 'http://localhost:8000';
+const LOCAL_DEV_PORT = '5173';
+const BACKEND_DEV_URL = 'http://localhost:8000';
+
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1']);
+const isLocalhost = LOCAL_HOSTNAMES.has(window.location.hostname);
+const isDevFrontend = isLocalhost && window.location.port === LOCAL_DEV_PORT;
+
+function normalizeBackendUrl(value) {
+  if (!value) return null;
+
+  try {
+    const decoded = decodeURIComponent(value);
+    if (/^https?:\/\//i.test(decoded)) {
+      return decoded.replace(/\/$/, "");
+    }
+  } catch (error) {
+    // ignore decode errors and fall back to raw value
+  }
+
+  if (/^https?:\/\//i.test(value)) {
+    return value.replace(/\/$/, "");
+  }
+
+  return null;
+}
+
+function getBackendUrlFromContext() {
+  // 1) Explicit global override (can be injected before app.js)
+  if (typeof window.MISIX_BACKEND_URL === "string") {
+    const fromGlobal = normalizeBackendUrl(window.MISIX_BACKEND_URL);
+    if (fromGlobal) return fromGlobal;
+  }
+
+  // 2) Query string ?backend=https://...
+  const searchParams = new URLSearchParams(window.location.search);
+  const backendFromQuery = normalizeBackendUrl(searchParams.get("backend"));
+  if (backendFromQuery) return backendFromQuery;
+
+  // 3) Hash #backend=https://...
+  const hash = window.location.hash?.replace(/^#/, "");
+  if (hash) {
+    const hashParams = new URLSearchParams(hash);
+    const backendFromHash = normalizeBackendUrl(hashParams.get("backend"));
+    if (backendFromHash) return backendFromHash;
+  }
+
+  // 4) Telegram WebApp start_param: backend=<url-encoded>
+  const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+  if (typeof startParam === "string" && startParam.length > 0) {
+    // Allow either "backend=<encoded>" or direct encoded URL string
+    const params = new URLSearchParams(startParam.replace(/;/g, "&"));
+    const backendFromStart = normalizeBackendUrl(params.get("backend") || startParam);
+    if (backendFromStart) return backendFromStart;
+  }
+
+  return null;
+}
+
+const dynamicBackendUrl = getBackendUrlFromContext();
+
+const BACKEND_BASE_URL =
+  dynamicBackendUrl
+  || (isDevFrontend ? BACKEND_DEV_URL : `${window.location.protocol}//${window.location.host}`);
+
+let supabaseClient = null;
+
+const state = {
+  userId: null,
+  userLabel: null,
+  loading: false,
+  error: null,
+  tasks: [],
+  notes: [],
+  finances: [],
+  sleepSessions: [],
+  healthMetrics: [],
+  personalEntries: [],
+  messages: [],
+  healthFilterType: 'all',
+  healthFilterPeriod: '30',
+  lastUpdated: null,
+};
+
+const UUID_REGEX = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+function isUuid(value) {
+  return UUID_REGEX.test(value);
+}
+
+function isTelegramId(value) {
+  return /^\d+$/.test(value);
+}
+
+function formatDisplayName(labelInput, userData, telegramId) {
+  if (labelInput) return labelInput;
+  if (userData?.full_name) return userData.full_name;
+  if (userData?.username) return `@${userData.username}`;
+  if (userData?.first_name || userData?.last_name) {
+    return `${userData.first_name || ''} ${userData.last_name || ''}`.trim();
+  }
+  return `tg:${telegramId}`;
+}
+
+function initSupabase() {
+  if (!supabaseClient) {
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  }
+}
+
+function setState(patch) {
+  Object.assign(state, patch);
+  render();
+}
+
+function formatDate(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function formatDateTime(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return `${formatDate(date)} ${date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+function formatSensitive(value) {
+  if (!value) return '—';
+  if (typeof value === 'string' && value.startsWith('gAAAA')) {
+    return '🔐 Скрыто (доступно через защищённый канал)';
+  }
+  return value;
+}
+
+function parseDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getUniqueMetricTypes(metrics) {
+  const types = new Set(metrics.map((metric) => metric.metric_type).filter(Boolean));
+  return Array.from(types);
+}
+
+function filterHealthMetrics(metrics) {
+  if (!metrics || metrics.length === 0) {
+    return [];
+  }
+
+  const { healthFilterType, healthFilterPeriod } = state;
+  const days = Number.parseInt(healthFilterPeriod, 10) || 30;
+  const threshold = new Date();
+  threshold.setDate(threshold.getDate() - days);
+
+  return metrics.filter((metric) => {
+    if (healthFilterType !== 'all' && metric.metric_type !== healthFilterType) {
+      return false;
+    }
+
+    const recordedAt = parseDate(metric.recorded_at || metric.created_at);
+    if (!recordedAt) {
+      return true;
+    }
+
+    return recordedAt >= threshold;
+  }).sort((a, b) => {
+    const dateA = parseDate(a.recorded_at || a.created_at) || new Date(0);
+    const dateB = parseDate(b.recorded_at || b.created_at) || new Date(0);
+    return dateA - dateB;
+  });
+}
+
+function computeHealthSummary(metrics) {
+  if (!metrics || metrics.length === 0) {
+    return null;
+  }
+
+  const values = metrics.map((metric) => Number(metric.metric_value)).filter((value) => !Number.isNaN(value));
+  if (values.length === 0) {
+    return null;
+  }
+
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const avg = values.reduce((acc, value) => acc + value, 0) / values.length;
+  const first = values[0];
+  const last = values[values.length - 1];
+
+  return {
+    min,
+    max,
+    avg,
+    delta: last - first,
+    latest: last,
+  };
+}
+
+function buildSparklineSvg(metrics) {
+  if (!metrics || metrics.length === 0) {
+    return '';
+  }
+
+  const values = metrics
+    .map((metric) => Number(metric.metric_value))
+    .filter((value) => !Number.isNaN(value));
+
+  if (values.length === 0) {
+    return '';
+  }
+
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+
+  const points = values.map((value, index) => {
+    const x = values.length === 1 ? 0 : (index / (values.length - 1)) * 100;
+    const y = 100 - ((value - min) / range) * 100;
+    return `${Math.round(x * 100) / 100},${Math.round(y * 100) / 100}`;
+  }).join(' ');
+
+  return `
+    <svg class="sparkline" viewBox="0 0 100 100" preserveAspectRatio="none">
+      <polyline points="${points}" fill="none" stroke="#38bdf8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+  `;
+}
+
+function formatAmount(amount) {
+  if (amount == null) return '—';
+  return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB' }).format(Number(amount));
+}
+
+async function loadData() {
+  if (!state.userId) return;
+  setState({ loading: true, error: null });
+
+  try {
+    const response = await fetch(`${BACKEND_BASE_URL}/api/dashboard/summary?user_id=${encodeURIComponent(state.userId)}`);
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Backend ${response.status}: ${text}`);
+    }
+
+    const data = await response.json();
+
+    setState({
+      loading: false,
+      error: null,
+      tasks: data.tasks ?? [],
+      notes: data.notes ?? [],
+      finances: data.finances ?? [],
+      sleepSessions: data.sleepSessions ?? [],
+      healthMetrics: data.healthMetrics ?? [],
+      personalEntries: data.personalEntries ?? [],
+      messages: data.messages ?? [],
+      lastUpdated: new Date(),
+    });
+  } catch (error) {
+    console.error('Failed to load data', error);
+    setState({ loading: false, error: 'Не удалось загрузить данные. Проверь соединение и попробуй снова.' });
+  }
+}
+
+function logout() {
+  setState({
+    userId: null,
+    userLabel: null,
+    tasks: [],
+    notes: [],
+    finances: [],
+    sleepSessions: [],
+    lastUpdated: null,
+    error: null,
+  });
+}
+
+function renderLogin() {
+  return `
+    <div class="login-wrapper card">
+      <h1>MISIX</h1>
+      <p>Авторизуйтесь через Telegram WebApp.</p>
+      <form id="login-form">
+        <button type="button" class="secondary" id="tg-login">Войти через Telegram</button>
+      </form>
+    </div>
+  `;
+}
+
+function renderToolbar() {
+  const name = state.userLabel ? state.userLabel : state.userId;
+  const subtitle = state.lastUpdated
+    ? `Обновлено ${formatDate(state.lastUpdated)} ${state.lastUpdated.toLocaleTimeString('ru-RU')}`
+    : 'Данные появятся после синхронизации';
+
+  return `
+    <div class="card">
+      <div class="section-header">
+        <div>
+          <h2>Привет, ${name || 'друг'} 👋</h2>
+          <small>${subtitle}</small>
+        </div>
+        <div class="toolbar">
+          <button type="button" id="refresh-btn">Обновить</button>
+          <button type="button" class="secondary" id="logout-btn">Выйти</button>
+        </div>
+      </div>
+      <div class="notice${state.loading ? '' : ' hidden'}">Обновляю данные...</div>
+      ${state.error ? `<div class="notice error">${state.error}</div>` : ''}
+    </div>
+  `;
+}
+
+function renderTasks() {
+  const { tasks } = state;
+  const content = tasks.length === 0
+    ? '<div class="empty">Задачи еще не добавлены. Создай задачу через бота, и она появится здесь.</div>'
+    : tasks.map((task) => `
+        <div class="item">
+          <strong>${task.title ?? 'Без названия'}</strong>
+          <span>${task.description ?? 'Описание отсутствует'}</span>
+          <div class="tags">
+            <span class="tag">${task.status ?? 'new'}</span>
+            ${task.priority ? `<span class="tag">${task.priority}</span>` : ''}
+            ${task.deadline ? `<span class="tag">до ${formatDate(task.deadline)}</span>` : ''}
+          </div>
+          <span class="timestamp">Создано: ${formatDate(task.created_at)}</span>
+        </div>
+      `).join('');
+
+  return `
+    <div class="card">
+      <div class="section-header">
+        <h3>Задачи</h3>
+        <small>${tasks.length} шт.</small>
+      </div>
+      <div class="grid">${content}</div>
+    </div>
+  `;
+}
+
+function renderNotes() {
+  const { notes } = state;
+  const content = notes.length === 0
+    ? '<div class="empty">Заметки появятся тут после создания через ассистента.</div>'
+    : notes.map((note) => `
+        <div class="item">
+          <strong>${note.title ?? 'Заметка'}</strong>
+          <span>${note.content ? note.content.substring(0, 150) : 'Текст отсутствует'}</span>
+          <span class="timestamp">Создано: ${formatDate(note.created_at)}</span>
+        </div>
+      `).join('');
+
+  return `
+    <div class="card">
+      <div class="section-header">
+        <h3>Заметки</h3>
+        <small>${notes.length} шт.</small>
+      </div>
+      <div class="grid">${content}</div>
+    </div>
+  `;
+}
+
+function renderFinances() {
+  const { finances } = state;
+  if (finances.length === 0) {
+    return `
+      <div class="card">
+        <div class="section-header">
+          <h3>Финансы</h3>
+          <small>0 записей</small>
+        </div>
+        <div class="empty">Когда добавишь расходы или доходы через бота, они появятся здесь.</div>
+      </div>
+    `;
+  }
+
+  const totalIncome = finances
+    .filter((tx) => tx.type === 'income')
+    .reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
+  const totalExpense = finances
+    .filter((tx) => tx.type === 'expense')
+    .reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
+
+  const rows = finances.map((tx) => `
+    <div class="item">
+      <strong>${tx.type === 'income' ? '💰 Доход' : '💸 Расход'} — ${formatAmount(tx.amount)}</strong>
+      <span>${tx.description || 'Без описания'}</span>
+      <div class="tags">
+        <span class="tag ${tx.type === 'income' ? 'green' : 'red'}">${tx.type}</span>
+        <span class="tag">${formatDate(tx.transaction_date)}</span>
+      </div>
+    </div>
+  `).join('');
+
+  return `
+    <div class="card">
+      <div class="section-header">
+        <h3>Финансы</h3>
+        <div class="tags">
+          <span class="tag green">доходов: ${formatAmount(totalIncome)}</span>
+          <span class="tag red">расходов: ${formatAmount(totalExpense)}</span>
+        </div>
+      </div>
+      <div class="grid">${rows}</div>
+    </div>
+  `;
+}
+
+function renderSleep() {
+  const { sleepSessions } = state;
+  if (sleepSessions.length === 0) {
+    return `
+      <div class="card">
+        <div class="section-header">
+          <h3>Сон</h3>
+          <small>0 сессий</small>
+        </div>
+        <div class="empty">Запусти сон в Телеграме, и статистика появится здесь.</div>
+      </div>
+    `;
+  }
+
+  const sessions = sleepSessions.map((session) => {
+    const totalSleep = Number(session.total_sleep_seconds || 0);
+    const totalPause = Number(session.total_pause_seconds || 0);
+    const hours = Math.floor(totalSleep / 3600);
+    const minutes = Math.floor((totalSleep % 3600) / 60);
+    const pauseMinutes = Math.round(totalPause / 60);
+
+    return `
+      <div class="item">
+        <strong>Статус: ${session.status}</strong>
+        <span>Сон: ${hours} ч ${minutes} мин</span>
+        <span>Пауза: ${pauseMinutes} мин</span>
+        <span class="timestamp">${formatDate(session.created_at)}</span>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="card">
+      <div class="section-header">
+        <h3>Сон</h3>
+        <small>${sleepSessions.length} последних сессий</small>
+      </div>
+      <div class="grid">${sessions}</div>
+    </div>
+  `;
+}
+
+function renderHealth() {
+  const { healthMetrics, healthFilterType, healthFilterPeriod } = state;
+  const availableTypes = getUniqueMetricTypes(healthMetrics);
+  const filteredMetrics = filterHealthMetrics(healthMetrics);
+  const summary = computeHealthSummary(filteredMetrics);
+  const sparkline = buildSparklineSvg(filteredMetrics);
+
+  const items = filteredMetrics
+    .slice()
+    .reverse()
+    .map((metric) => `
+      <div class="item">
+        <strong>${metric.metric_type ?? 'Показатель'} — ${metric.metric_value ?? '?'} ${metric.unit ?? ''}</strong>
+        <span>${metric.note ?? 'Без заметок'}</span>
+        <span class="timestamp">Записано: ${formatDateTime(metric.recorded_at)}</span>
+      </div>
+    `).join('');
+
+  const hasData = healthMetrics.length > 0;
+  const hasFilteredData = filteredMetrics.length > 0;
+
+  return `
+    <div class="card">
+      <div class="section-header">
+        <h3>Здоровье</h3>
+        <small>${hasData ? `${healthMetrics.length} записей` : 'Нет записей'}</small>
+      </div>
+      <div class="health-toolbar">
+        <label>
+          Тип показателя
+          <select id="health-filter-type">
+            <option value="all" ${healthFilterType === 'all' ? 'selected' : ''}>Все</option>
+            ${availableTypes.map((type) => `<option value="${type}" ${healthFilterType === type ? 'selected' : ''}>${type}</option>`).join('')}
+          </select>
+        </label>
+        <label>
+          Период
+          <select id="health-filter-period">
+            <option value="7" ${healthFilterPeriod === '7' ? 'selected' : ''}>7 дней</option>
+            <option value="30" ${healthFilterPeriod === '30' ? 'selected' : ''}>30 дней</option>
+            <option value="90" ${healthFilterPeriod === '90' ? 'selected' : ''}>90 дней</option>
+            <option value="365" ${healthFilterPeriod === '365' ? 'selected' : ''}>1 год</option>
+          </select>
+        </label>
+      </div>
+      ${summary ? `
+        <div class="health-summary">
+          <span><strong>Последнее:</strong> ${summary.latest.toFixed(2)}</span>
+          <span><strong>Ср. значение:</strong> ${summary.avg.toFixed(2)}</span>
+          <span><strong>Мин:</strong> ${summary.min.toFixed(2)}</span>
+          <span><strong>Макс:</strong> ${summary.max.toFixed(2)}</span>
+          <span><strong>Δ:</strong> ${summary.delta >= 0 ? '+' : ''}${summary.delta.toFixed(2)}</span>
+        </div>
+      ` : ''}
+      ${sparkline ? `<div class="sparkline-wrapper">${sparkline}</div>` : ''}
+      ${hasFilteredData ? `<div class="grid">${items}</div>` : `<div class="empty">Нет данных за выбранный период. Попробуй другой фильтр.</div>`}
+      ${!hasData ? '<div class="empty">Фиксируй показатели через бота, и они появятся здесь.</div>' : ''}
+    </div>
+  `;
+}
+
+function renderPersonalData() {
+  const { personalEntries } = state;
+  if (personalEntries.length === 0) {
+    return `
+      <div class="card">
+        <div class="section-header">
+          <h3>Личные данные</h3>
+          <small>0 записей</small>
+        </div>
+        <div class="empty">Спроси бота сохранить контакты или логины, и они появятся здесь (чувствительные данные скрыты).</div>
+      </div>
+    `;
+  }
+
+  const entries = personalEntries.map((entry) => {
+    const details = [
+      entry.contact_name ? `<span>Контакт: ${entry.contact_name}</span>` : '',
+      entry.login_username ? `<span>Логин: ${formatSensitive(entry.login_username)}</span>` : '',
+      entry.login_password ? `<span>Пароль: ${formatSensitive(entry.login_password)}</span>` : '',
+      entry.contact_phone ? `<span>Телефон: ${formatSensitive(entry.contact_phone)}</span>` : '',
+      entry.contact_email ? `<span>Email: ${formatSensitive(entry.contact_email)}</span>` : '',
+      entry.document_number ? `<span>Документ: ${formatSensitive(entry.document_number)}</span>` : '',
+      entry.document_expiry ? `<span>Срок: ${formatDate(entry.document_expiry)}</span>` : '',
+      entry.notes ? `<span>${entry.notes}</span>` : '',
+    ].filter(Boolean).join('');
+
+    const tags = Array.isArray(entry.tags) && entry.tags.length
+      ? entry.tags.map((tag) => `<span class="tag">${tag}</span>`).join('')
+      : '';
+
+    return `
+      <div class="item">
+        <strong>${entry.title ?? 'Запись'}</strong>
+        <span>Тип: ${entry.data_type ?? 'unknown'} ${entry.is_favorite ? '⭐' : ''}</span>
+        <div class="details">${details || '<span>Подробности отсутствуют.</span>'}</div>
+        <div class="tags">${tags}</div>
+        <span class="timestamp">Добавлено: ${formatDateTime(entry.created_at)}</span>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="card">
+      <div class="section-header">
+        <h3>Личные данные</h3>
+        <small>${personalEntries.length} записей</small>
+      </div>
+      <div class="grid">${entries}</div>
+    </div>
+  `;
+}
+
+function renderDashboard() {
+  return `
+    ${renderToolbar()}
+    ${renderTasks()}
+    ${renderNotes()}
+    ${renderFinances()}
+    ${renderSleep()}
+    ${renderHealth()}
+    ${renderPersonalData()}
+  `;
+}
+
+function render() {
+  const root = document.getElementById('app');
+  if (!state.userId) {
+    root.innerHTML = renderLogin();
+    const tgButton = document.getElementById('tg-login');
+    if (tgButton) tgButton.addEventListener('click', tryTelegramLogin);
+    return;
+  }
+
+  root.innerHTML = renderDashboard();
+
+  const refreshBtn = document.getElementById('refresh-btn');
+  if (refreshBtn) refreshBtn.addEventListener('click', loadData);
+
+  const logoutBtn = document.getElementById('logout-btn');
+  if (logoutBtn) logoutBtn.addEventListener('click', logout);
+
+  const healthTypeSelect = document.getElementById('health-filter-type');
+  if (healthTypeSelect) {
+    healthTypeSelect.addEventListener('change', (event) => {
+      setState({ healthFilterType: event.target.value });
+    });
+  }
+
+  const healthPeriodSelect = document.getElementById('health-filter-period');
+  if (healthPeriodSelect) {
+    healthPeriodSelect.addEventListener('change', (event) => {
+      setState({ healthFilterPeriod: event.target.value });
+    });
+  }
+}
+
+function tryTelegramLogin() {
+  if (!(window.Telegram && window.Telegram.WebApp)) {
+    alert('Этот способ работает только из Telegram WebApp.');
+    return;
+  }
+
+  const tg = window.Telegram.WebApp;
+  const user = tg.initDataUnsafe?.user;
+  if (!user) {
+    alert('Не удалось получить данные пользователя из Telegram.');
+    return;
+  }
+
+  const telegramId = user.id;
+
+  // Запрашиваем привязку Telegram ID → user_id в БД
+  setState({ loading: true, error: null });
+  supabaseClient
+    .from('users')
+    .select('id')
+    .eq('telegram_id', telegramId)
+    .limit(1)
+    .single()
+    .then(({ data, error }) => {
+      if (error || !data) {
+        throw error || new Error('Пользователь не найден в базе.');
+      }
+      setState({ userId: data.id, userLabel: `${user.first_name || ''} ${user.last_name || ''}`.trim() });
+      loadData();
+    })
+    .catch((err) => {
+      console.error('Telegram login failed', err);
+      setState({ loading: false, error: 'Не удалось найти пользователя в базе. Напиши боту, чтобы он создал запись.' });
+    });
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  initSupabase();
+  render();
+
+  // Автологин через Telegram Web App (если открыто внутри клиента)
+  if (window.Telegram && window.Telegram.WebApp) {
+    const tg = window.Telegram.WebApp;
+    const user = tg.initDataUnsafe?.user;
+    if (user) {
+      const telegramId = user.id;
+      supabaseClient
+        .from('users')
+        .select('id')
+        .eq('telegram_id', telegramId)
+        .limit(1)
+        .single()
+        .then(({ data }) => {
+          if (data?.id) {
+            setState({ userId: data.id, userLabel: `${user.first_name || ''} ${user.last_name || ''}`.trim() });
+            loadData();
+          }
+        })
+        .catch(() => {
+          // тихо игнорируем – пользователь просто увидит форму логина
+        });
+    }
+  }
+});

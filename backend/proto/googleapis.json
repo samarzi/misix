@@ -1,0 +1,50 @@
+[
+  {
+    "name": "LICENSE",
+    "path": "third_party/googleapis/LICENSE",
+    "sha": "261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64",
+    "size": 11357,
+    "url": "https://api.github.com/repos/yandex-cloud/cloudapi/contents/third_party/googleapis/LICENSE?ref=master",
+    "html_url": "https://github.com/yandex-cloud/cloudapi/blob/master/third_party/googleapis/LICENSE",
+    "git_url": "https://api.github.com/repos/yandex-cloud/cloudapi/git/blobs/261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64",
+    "download_url": "https://raw.githubusercontent.com/yandex-cloud/cloudapi/master/third_party/googleapis/LICENSE",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/yandex-cloud/cloudapi/contents/third_party/googleapis/LICENSE?ref=master",
+      "git": "https://api.github.com/repos/yandex-cloud/cloudapi/git/blobs/261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64",
+      "html": "https://github.com/yandex-cloud/cloudapi/blob/master/third_party/googleapis/LICENSE"
+    }
+  },
+  {
+    "name": "README.md",
+    "path": "third_party/googleapis/README.md",
+    "sha": "bbfd3531a0118fa7e27e5e5164b81add9fcad5dc",
+    "size": 370,
+    "url": "https://api.github.com/repos/yandex-cloud/cloudapi/contents/third_party/googleapis/README.md?ref=master",
+    "html_url": "https://github.com/yandex-cloud/cloudapi/blob/master/third_party/googleapis/README.md",
+    "git_url": "https://api.github.com/repos/yandex-cloud/cloudapi/git/blobs/bbfd3531a0118fa7e27e5e5164b81add9fcad5dc",
+    "download_url": "https://raw.githubusercontent.com/yandex-cloud/cloudapi/master/third_party/googleapis/README.md",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/yandex-cloud/cloudapi/contents/third_party/googleapis/README.md?ref=master",
+      "git": "https://api.github.com/repos/yandex-cloud/cloudapi/git/blobs/bbfd3531a0118fa7e27e5e5164b81add9fcad5dc",
+      "html": "https://github.com/yandex-cloud/cloudapi/blob/master/third_party/googleapis/README.md"
+    }
+  },
+  {
+    "name": "google",
+    "path": "third_party/googleapis/google",
+    "sha": "dcce898faf5b2dc06347af9406f1a48c0e466588",
+    "size": 0,
+    "url": "https://api.github.com/repos/yandex-cloud/cloudapi/contents/third_party/googleapis/google?ref=master",
+    "html_url": "https://github.com/yandex-cloud/cloudapi/tree/master/third_party/googleapis/google",
+    "git_url": "https://api.github.com/repos/yandex-cloud/cloudapi/git/trees/dcce898faf5b2dc06347af9406f1a48c0e466588",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/yandex-cloud/cloudapi/contents/third_party/googleapis/google?ref=master",
+      "git": "https://api.github.com/repos/yandex-cloud/cloudapi/git/trees/dcce898faf5b2dc06347af9406f1a48c0e466588",
+      "html": "https://github.com/yandex-cloud/cloudapi/tree/master/third_party/googleapis/google"
+    }
+  }
+]

@@ -71,6 +71,11 @@ def create_app() -> FastAPI:
             # Get the JSON data from Telegram
             data = await request.json()
 
+            if not application.initialized:
+                await application.initialize()
+            if not application.running:
+                await application.start()
+
             # Process the update with the bot application
             update = Update.de_json(data, application.bot)
             await application.process_update(update)

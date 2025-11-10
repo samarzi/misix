@@ -11,6 +11,9 @@ from app.web.auth import get_current_user_id
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+VALID_TASK_STATUSES = {"new", "in_progress", "waiting", "completed", "cancelled"}
+VALID_TASK_PRIORITIES = {"low", "medium", "high", "critical"}
+
 # Pydantic models
 class TaskBase(BaseModel):
     title: str
@@ -23,6 +26,10 @@ class TaskBase(BaseModel):
 
 class TaskCreate(TaskBase):
     pass
+
+
+class TaskCreatePublic(TaskBase):
+    user_id: str
 
 class Task(TaskBase):
     id: str
@@ -64,12 +71,12 @@ async def get_tasks(
         query = supabase.table("tasks").select("*").eq("user_id", user_id)
 
         if status:
-            if status not in ["new", "in_progress", "waiting", "completed", "cancelled"]:
+            if status not in VALID_TASK_STATUSES:
                 raise HTTPException(status_code=400, detail="Invalid status value")
             query = query.eq("status", status)
 
         if priority:
-            if priority not in ["low", "medium", "high", "critical"]:
+            if priority not in VALID_TASK_PRIORITIES:
                 raise HTTPException(status_code=400, detail="Invalid priority value")
             query = query.eq("priority", priority)
 
@@ -87,6 +94,43 @@ async def get_tasks(
         logger.error(f"Error fetching tasks: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch tasks")
 
+def _build_task_payload(user_id: str, task: TaskBase) -> dict:
+    status = task.status or "new"
+    priority = task.priority or "medium"
+
+    if status not in VALID_TASK_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid status value")
+    if priority not in VALID_TASK_PRIORITIES:
+        raise HTTPException(status_code=400, detail="Invalid priority value")
+
+    payload = {
+        "user_id": user_id,
+        "title": task.title,
+        "description": task.description,
+        "priority": priority,
+        "status": status,
+    }
+
+    if task.deadline:
+        payload["deadline"] = task.deadline
+    if task.estimated_hours is not None:
+        payload["estimated_hours"] = task.estimated_hours
+    if task.project_id:
+        payload["project_id"] = task.project_id
+
+    return payload
+
+
+def _insert_task(payload: dict) -> Task:
+    supabase = get_supabase_client()
+    response = supabase.table("tasks").insert(payload).execute()
+
+    if not response.data:
+        raise HTTPException(status_code=500, detail="Failed to create task")
+
+    return Task(**response.data[0])
+
+
 @router.post("/tasks", response_model=Task)
 async def create_task(
     task: TaskCreate,
@@ -94,36 +138,25 @@ async def create_task(
 ):
     """Create a new task."""
     try:
-        # Validate inputs
-        if task.status and task.status not in ["new", "in_progress", "waiting", "completed", "cancelled"]:
-            raise HTTPException(status_code=400, detail="Invalid status value")
-
-        if task.priority and task.priority not in ["low", "medium", "high", "critical"]:
-            raise HTTPException(status_code=400, detail="Invalid priority value")
-
-        supabase = get_supabase_client()
-
-        task_data = {
-            "user_id": user_id,
-            "title": task.title,
-            "description": task.description,
-            "priority": task.priority or "medium",
-            "status": task.status or "new",
-            "deadline": task.deadline,
-            "estimated_hours": task.estimated_hours,
-            "project_id": task.project_id
-        }
-
-        response = supabase.table("tasks").insert(task_data).execute()
-
-        if not response.data:
-            raise HTTPException(status_code=500, detail="Failed to create task")
-
-        return Task(**response.data[0])
+        payload = _build_task_payload(user_id, task)
+        return _insert_task(payload)
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error creating task: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create task")
+
+
+@router.post("/tasks/public", response_model=Task)
+async def create_task_public(task: TaskCreatePublic):
+    """Create a task when only user_id is available (no auth token)."""
+    try:
+        payload = _build_task_payload(task.user_id, task)
+        return _insert_task(payload)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating public task: {e}")
         raise HTTPException(status_code=500, detail="Failed to create task")
 
 @router.get("/tasks/{task_id}", response_model=Task)

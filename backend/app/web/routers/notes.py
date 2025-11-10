@@ -19,6 +19,10 @@ class NoteBase(BaseModel):
 class NoteCreate(NoteBase):
     folder_id: Optional[str] = None
 
+
+class NoteCreatePublic(NoteBase):
+    user_id: str
+
 class Note(NoteBase):
     id: str
     user_id: str
@@ -65,6 +69,16 @@ async def get_notes(
         logger.error(f"Error fetching notes: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch notes")
 
+def _insert_note(payload: dict) -> Note:
+    supabase = get_supabase_client()
+    response = supabase.table("notes").insert(payload).execute()
+
+    if not response.data:
+        raise HTTPException(status_code=500, detail="Failed to create note")
+
+    return Note(**response.data[0])
+
+
 @router.post("/notes", response_model=Note)
 async def create_note(
     note: NoteCreate,
@@ -72,25 +86,38 @@ async def create_note(
 ):
     """Create a new note."""
     try:
-        supabase = get_supabase_client()
-
-        note_data = {
+        payload = {
             "user_id": user_id,
             "title": note.title,
             "content": note.content,
-            "content_format": note.content_format or "markdown"
+            "content_format": note.content_format or "markdown",
         }
+        if note.folder_id:
+            payload["folder_id"] = note.folder_id
 
-        response = supabase.table("notes").insert(note_data).execute()
-
-        if not response.data:
-            raise HTTPException(status_code=500, detail="Failed to create note")
-
-        return Note(**response.data[0])
+        return _insert_note(payload)
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error creating note: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create note")
+
+
+@router.post("/notes/public", response_model=Note)
+async def create_note_public(note: NoteCreatePublic):
+    """Create a note when only user_id is available (no auth token)."""
+    try:
+        payload = {
+            "user_id": note.user_id,
+            "title": note.title,
+            "content": note.content,
+            "content_format": note.content_format or "markdown",
+        }
+        return _insert_note(payload)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating public note: {e}")
         raise HTTPException(status_code=500, detail="Failed to create note")
 
 @router.get("/notes/{note_id}", response_model=Note)

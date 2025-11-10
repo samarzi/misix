@@ -79,6 +79,19 @@ const state = {
   userLabel: null,
   loading: false,
   error: null,
+  view: 'dashboard',
+  showSettingsModal: false,
+  settingsMode: null,
+  passwordConfigured: false,
+  securityQuestion: null,
+  securityAnswer: null,
+  passwordHash: null,
+  pinEntry: ['', '', '', ''],
+  pinError: null,
+  pinStep: 'enter',
+  pendingAction: null,
+  tmpPin: null,
+  unlocked: false,
   overview: null,
   tasks: [],
   notes: [],
@@ -93,6 +106,67 @@ const state = {
   healthFilterPeriod: '30',
   lastUpdated: null,
 };
+
+const SECURITY_STORAGE_KEYS = {
+  hash: 'misix_pin_hash',
+  question: 'misix_pin_question',
+  answer: 'misix_pin_answer',
+};
+
+function hydrateSecurityState() {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return;
+  }
+
+  const storedHash = window.localStorage.getItem(SECURITY_STORAGE_KEYS.hash);
+  const storedQuestion = window.localStorage.getItem(SECURITY_STORAGE_KEYS.question);
+  const storedAnswer = window.localStorage.getItem(SECURITY_STORAGE_KEYS.answer);
+
+  if (storedHash) {
+    state.passwordConfigured = true;
+    state.passwordHash = storedHash;
+    state.securityQuestion = storedQuestion || null;
+    state.securityAnswer = storedAnswer || null;
+  }
+}
+
+function persistSecurityToStorage() {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return;
+  }
+
+  if (state.passwordConfigured && state.passwordHash) {
+    window.localStorage.setItem(SECURITY_STORAGE_KEYS.hash, state.passwordHash);
+    if (state.securityQuestion) {
+      window.localStorage.setItem(SECURITY_STORAGE_KEYS.question, state.securityQuestion);
+    }
+    if (state.securityAnswer) {
+      window.localStorage.setItem(SECURITY_STORAGE_KEYS.answer, state.securityAnswer);
+    }
+  } else {
+    clearSecurityFromStorage();
+  }
+}
+
+function clearSecurityFromStorage() {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return;
+  }
+  window.localStorage.removeItem(SECURITY_STORAGE_KEYS.hash);
+  window.localStorage.removeItem(SECURITY_STORAGE_KEYS.question);
+  window.localStorage.removeItem(SECURITY_STORAGE_KEYS.answer);
+}
+
+hydrateSecurityState();
+state.unlocked = !state.passwordConfigured;
+
+function resetSecuritySettings() {
+  state.passwordHash = null;
+  state.passwordConfigured = false;
+  state.securityQuestion = null;
+  state.securityAnswer = null;
+  persistSecurityToStorage();
+}
 
 const UUID_REGEX = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
@@ -141,6 +215,12 @@ function initSupabase() {
 function setState(patch) {
   Object.assign(state, patch);
   render();
+}
+
+function resetPinEntry(step = 'enter') {
+  state.pinEntry = ['', '', '', ''];
+  state.pinError = null;
+  state.pinStep = step;
 }
 
 function formatDate(value) {
@@ -265,6 +345,9 @@ function formatAmount(amount) {
 
 async function loadData() {
   if (!state.userId) return;
+  if (state.passwordConfigured && !state.unlocked) {
+    return;
+  }
   setState({ loading: true, error: null });
 
   try {
@@ -305,6 +388,8 @@ function logout() {
   setState({
     userId: null,
     userLabel: null,
+    view: 'dashboard',
+    unlocked: !state.passwordConfigured,
     overview: null,
     tasks: [],
     notes: [],
@@ -347,7 +432,7 @@ function renderToolbar() {
     <div class="card">
       <div class="section-header">
         <div>
-          <h2>Привет, ${name || 'друг'} 👋</h2>
+          <h2 class="glow">Привет, ${name || 'друг'} 👋</h2>
           <small>${subtitle}</small>
         </div>
         <div class="toolbar">
@@ -780,6 +865,7 @@ function renderPersonalData() {
 }
 
 function renderDashboard() {
+  const overlay = state.passwordConfigured && !state.unlocked ? renderLockOverlay() : '';
   return `
     ${renderToolbar()}
     ${renderOverview()}
@@ -791,27 +877,231 @@ function renderDashboard() {
     ${renderSleep()}
     ${renderHealth()}
     ${renderPersonalData()}
+    ${renderFooter()}
+    ${overlay}
   `;
 }
 
-function render() {
+function renderLockOverlay() {
+  return `
+    <div class="modal-backdrop lock">
+      <div class="modal bounce-in" id="unlock-modal">
+        <h3>Введите PIN</h3>
+        <p>Для доступа к дашборду нужно подтвердить код</p>
+        ${renderPinDots(state.pinEntry)}
+        ${state.pinError ? `<div class="error">${state.pinError}</div>` : ''}
+        ${renderNumpad()}
+        <div class="modal-actions">
+          <button type="button" class="link" id="unlock-forgot">Забыли PIN?</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderFooter() {
+  return `
+    <div class="footer">
+      <button type="button" class="settings-btn" id="open-settings">⚙️ Настройки</button>
+    </div>
+  `;
+}
+
+function renderPinDots(entry) {
+  return `
+    <div class="pin-dots">
+      ${entry.map((digit, index) => `<div class="dot ${digit ? 'filled' : ''}" data-index="${index}"></div>`).join('')}
+    </div>
+  `;
+}
+
+function renderNumpad() {
+  const keys = ['1','2','3','4','5','6','7','8','9','back','0','ok'];
+  return `
+    <div class="numpad">
+      ${keys.map((key) => {
+        if (key === 'back') {
+          return `<button type="button" class="numpad-key" data-key="back">⌫</button>`;
+        }
+        if (key === 'ok') {
+          return `<button type="button" class="numpad-key confirm" data-key="ok">OK</button>`;
+        }
+        return `<button type="button" class="numpad-key" data-key="${key}">${key}</button>`;
+      }).join('')}
+    </div>
+  `;
+}
+
+function renderPasswordModalContent() {
+  const { settingsMode, pinEntry, pinError, securityQuestion, pinStep, passwordConfigured } = state;
+  const stepText = {
+    set: {
+      enter: 'Придумайте PIN из 4 цифр',
+      confirm: 'Повторите PIN',
+      question: 'Придумайте секретный вопрос',
+      answer: 'Ответ на секретный вопрос'
+    },
+    change: {
+      enter: 'Введите текущий PIN',
+      new: 'Новый PIN (4 цифры)',
+      confirm: 'Повторите новый PIN'
+    },
+    delete: {
+      question: `Вопрос: ${securityQuestion ?? ''}`,
+      answer: 'Введите ответ'
+    },
+    wipe: {
+      question: `Вопрос: ${securityQuestion ?? ''}`,
+      answer: 'Введите ответ для удаления данных'
+    }
+  };
+
+  const currentSteps = stepText[settingsMode] || {};
+  const titleMap = {
+    set: 'Установка PIN',
+    change: 'Изменение PIN',
+    delete: 'Удаление PIN',
+    wipe: 'Удаление данных'
+  };
+
+  if (settingsMode === 'set') {
+    if (pinStep === 'question' || pinStep === 'answer') {
+      return `
+        <h3>${titleMap[settingsMode]}</h3>
+        <p>${currentSteps[pinStep]}</p>
+        <input type="text" id="security-${pinStep}" class="input" placeholder="${pinStep === 'question' ? 'Например: имя первого учителя' : 'Ответ'}" />
+        ${pinError ? `<div class="error">${pinError}</div>` : ''}
+        <div class="modal-actions">
+          <button type="button" class="secondary" id="cancel-settings">Отмена</button>
+          <button type="button" id="confirm-security">Продолжить</button>
+        </div>
+      `;
+    }
+  }
+
+  if (settingsMode === 'delete' || settingsMode === 'wipe') {
+    return `
+      <h3>${titleMap[settingsMode]}</h3>
+      <p>${currentSteps.question}</p>
+      <input type="text" id="security-answer" class="input" placeholder="Ответ" />
+      ${pinError ? `<div class="error">${pinError}</div>` : ''}
+      <div class="modal-actions">
+        <button type="button" class="secondary" id="cancel-settings">Отмена</button>
+        <button type="button" id="confirm-security">Подтвердить</button>
+      </div>
+    `;
+  }
+
+  return `
+    <h3>${titleMap[settingsMode] ?? 'PIN'}</h3>
+    <p>${currentSteps[pinStep] ?? ''}</p>
+    ${renderPinDots(pinEntry)}
+    ${pinError ? `<div class="error">${pinError}</div>` : ''}
+    ${renderNumpad()}
+    <div class="modal-actions">
+      ${settingsMode === 'set' || settingsMode === 'change' ? `<button type="button" class="link" id="cancel-settings">Отмена</button>` : ''}
+      ${settingsMode === 'set' && passwordConfigured ? '<button type="button" class="link" id="forgot-pin">Забыли PIN?</button>' : ''}
+    </div>
+  `;
+}
+
+function renderSettingsView() {
+  const { passwordConfigured } = state;
+  return `
+    <div class="card settings-card fade-in">
+      <div class="section-header">
+        <div>
+          <h3>Настройки безопасности</h3>
+          <small>PIN-защита доступа к MISIX</small>
+        </div>
+        <button type="button" class="secondary" id="close-settings">Назад</button>
+      </div>
+      <div class="settings-list">
+        ${!passwordConfigured ? `
+          <button type="button" class="settings-item" data-action="set-password">
+            <div>
+              <strong>Установить PIN</strong>
+              <span>Создайте четырёхзначный код и секретный вопрос</span>
+            </div>
+            <span class="arrow">›</span>
+          </button>
+        ` : ''}
+        ${passwordConfigured ? `
+          <button type="button" class="settings-item" data-action="change-password">
+            <div>
+              <strong>Изменить PIN</strong>
+              <span>Введите текущий код и установите новый</span>
+            </div>
+            <span class="arrow">›</span>
+          </button>
+          <button type="button" class="settings-item" data-action="delete-password">
+            <div>
+              <strong>Удалить PIN</strong>
+              <span>Ответьте на секретный вопрос, чтобы отключить PIN</span>
+            </div>
+            <span class="arrow danger">›</span>
+          </button>
+          <button type="button" class="settings-item danger" data-action="wipe-data">
+            <div>
+              <strong>Удалить всю информацию</strong>
+              <span>Потребуется подтвердить секретный ответ</span>
+            </div>
+            <span class="arrow danger">›</span>
+          </button>
+        ` : ''}
+      </div>
+    </div>
+    ${state.showSettingsModal ? `
+      <div class="modal-backdrop">
+        <div class="modal bounce-in" id="settings-modal">
+          ${renderPasswordModalContent()}
+        </div>
+      </div>
+    ` : ''}
+  `;
+}
+
+function renderRoot() {
   const root = document.getElementById('app');
+  if (!root) return;
+
   if (!state.userId) {
     root.innerHTML = renderLogin();
     const tgButton = document.getElementById('tg-login');
     if (tgButton) tgButton.addEventListener('click', tryTelegramLogin);
     const devButton = document.getElementById('dev-login');
     if (devButton) devButton.addEventListener('click', tryDevLogin);
+    initSettingsListeners();
     return;
   }
 
-  root.innerHTML = renderDashboard();
+  if (state.view === 'settings') {
+    root.innerHTML = `
+      ${renderToolbar()}
+      ${renderSettingsView()}
+    `;
+  } else {
+    root.innerHTML = renderDashboard();
+  }
 
+  initDashboardListeners();
+  initSettingsListeners();
+  initLockListeners();
+}
+
+function initDashboardListeners() {
   const refreshBtn = document.getElementById('refresh-btn');
   if (refreshBtn) refreshBtn.addEventListener('click', loadData);
 
   const logoutBtn = document.getElementById('logout-btn');
   if (logoutBtn) logoutBtn.addEventListener('click', logout);
+
+  const openSettingsBtn = document.getElementById('open-settings');
+  if (openSettingsBtn) {
+    openSettingsBtn.addEventListener('click', () => {
+      setState({ view: 'settings' });
+    });
+  }
 
   const healthTypeSelect = document.getElementById('health-filter-type');
   if (healthTypeSelect) {
@@ -826,6 +1116,316 @@ function render() {
       setState({ healthFilterPeriod: event.target.value });
     });
   }
+}
+
+function initSettingsListeners() {
+  const closeSettings = document.getElementById('close-settings');
+  if (closeSettings) {
+    closeSettings.addEventListener('click', () => {
+      setState({ view: 'dashboard', showSettingsModal: false, settingsMode: null });
+      resetPinEntry('enter');
+    });
+  }
+
+  document.querySelectorAll('.settings-item').forEach((item) => {
+    item.addEventListener('click', (event) => {
+      const target = event.currentTarget;
+      const action = target.getAttribute('data-action');
+      handleSettingsAction(action);
+    });
+  });
+
+  const cancelSettings = document.getElementById('cancel-settings');
+  if (cancelSettings) {
+    cancelSettings.addEventListener('click', () => {
+      setState({ showSettingsModal: false, settingsMode: null });
+      resetPinEntry('enter');
+    });
+  }
+
+  const confirmSecurity = document.getElementById('confirm-security');
+  if (confirmSecurity) {
+    confirmSecurity.addEventListener('click', handleSecurityConfirmation);
+  }
+
+  const forgotPin = document.getElementById('forgot-pin');
+  if (forgotPin) {
+    forgotPin.addEventListener('click', () => {
+      setState({ settingsMode: 'delete', showSettingsModal: true, pinStep: 'question', pinError: null });
+    });
+  }
+
+  document.querySelectorAll('#settings-modal .numpad-key').forEach((key) => {
+    key.addEventListener('click', () => handleNumpadInput(key.getAttribute('data-key')));
+  });
+
+  const securityQuestionInput = document.getElementById('security-question');
+  if (securityQuestionInput) {
+    securityQuestionInput.value = state.securityQuestion || '';
+  }
+
+  const securityAnswerInput = document.getElementById('security-answer');
+  if (securityAnswerInput && (state.settingsMode === 'set' && state.pinStep === 'answer')) {
+    securityAnswerInput.value = state.securityAnswer || '';
+  }
+}
+
+function initLockListeners() {
+  if (!(state.passwordConfigured && !state.unlocked)) {
+    return;
+  }
+
+  document.querySelectorAll('#unlock-modal .numpad-key').forEach((key) => {
+    key.addEventListener('click', () => handleNumpadInput(key.getAttribute('data-key')));
+  });
+
+  const forgotBtn = document.getElementById('unlock-forgot');
+  if (forgotBtn) {
+    forgotBtn.addEventListener('click', () => {
+      if (!state.securityQuestion) {
+        alert('Секретный вопрос не настроен. Обратитесь в поддержку.');
+        return;
+      }
+      setState({
+        view: 'settings',
+        showSettingsModal: true,
+        settingsMode: 'delete',
+        pinStep: 'question',
+        pinError: null,
+      });
+    });
+  }
+}
+
+function hashPin(pin) {
+  return btoa(pin.split('').reverse().join(''));
+}
+
+function verifyPin(pin, hash) {
+  return hashPin(pin) === hash;
+}
+
+function handleSettingsAction(action) {
+  switch (action) {
+    case 'set-password':
+      resetPinEntry('enter');
+      setState({ showSettingsModal: true, settingsMode: 'set', pinStep: 'enter', pinError: null });
+      break;
+    case 'change-password':
+      resetPinEntry('enter');
+      setState({ showSettingsModal: true, settingsMode: 'change', pinStep: 'enter', pinError: null });
+      break;
+    case 'delete-password':
+      setState({ showSettingsModal: true, settingsMode: 'delete', pinStep: 'question', pinError: null });
+      break;
+    case 'wipe-data':
+      setState({ showSettingsModal: true, settingsMode: 'wipe', pinStep: 'question', pinError: null });
+      break;
+    default:
+      break;
+  }
+}
+
+function handleNumpadInput(key) {
+  const currentEntry = [...state.pinEntry];
+  if (key === 'back') {
+    for (let i = currentEntry.length - 1; i >= 0; i -= 1) {
+      if (currentEntry[i]) {
+        currentEntry[i] = '';
+        break;
+      }
+    }
+    setState({ pinEntry: currentEntry, pinError: null });
+    return;
+  }
+
+  if (key === 'ok') {
+    processPinEntry();
+    return;
+  }
+
+  if (!/^[0-9]$/.test(key)) {
+    return;
+  }
+
+  for (let i = 0; i < currentEntry.length; i += 1) {
+    if (!currentEntry[i]) {
+      currentEntry[i] = key;
+      break;
+    }
+  }
+  setState({ pinEntry: currentEntry });
+  if (currentEntry.every((value) => value)) {
+    processPinEntry();
+  }
+}
+
+function processPinEntry() {
+  const pin = state.pinEntry.join('');
+  if (pin.length < 4) {
+    setState({ pinError: 'Нужно 4 цифры' });
+    return;
+  }
+
+  if (state.passwordConfigured && !state.unlocked && state.settingsMode === null) {
+    if (!state.passwordHash) {
+      setState({ pinError: 'PIN не настроен' });
+      return;
+    }
+    if (!verifyPin(pin, state.passwordHash)) {
+      resetPinEntry('enter');
+      setState({ pinError: 'Неверный PIN' });
+      return;
+    }
+    setState({ unlocked: true, pinError: null, pinEntry: ['', '', '', ''] });
+    loadData();
+    return;
+  }
+
+  if (state.settingsMode === 'set') {
+    if (state.pinStep === 'enter') {
+      state.tmpPin = pin;
+      resetPinEntry('confirm');
+      render();
+      return;
+    }
+    if (state.pinStep === 'confirm') {
+      if (pin !== state.tmpPin) {
+        state.tmpPin = null;
+        resetPinEntry('enter');
+        setState({ pinError: 'PIN не совпадает, попробуй снова' });
+        return;
+      }
+      state.passwordHash = hashPin(pin);
+      resetPinEntry('question');
+      setState({ pinError: null });
+      return;
+    }
+  }
+
+  if (state.settingsMode === 'change') {
+    if (state.pinStep === 'enter') {
+      if (!verifyPin(pin, state.passwordHash)) {
+        resetPinEntry('enter');
+        setState({ pinError: 'Неверный текущий PIN' });
+        return;
+      }
+      resetPinEntry('new');
+      setState({ pinError: null });
+      return;
+    }
+    if (state.pinStep === 'new') {
+      state.tmpPin = pin;
+      resetPinEntry('confirm');
+      setState({ pinError: null });
+      return;
+    }
+    if (state.pinStep === 'confirm') {
+      if (pin !== state.tmpPin) {
+        resetPinEntry('new');
+        setState({ pinError: 'PIN не совпадает' });
+        return;
+      }
+      state.passwordHash = hashPin(pin);
+      state.tmpPin = null;
+      persistSecurityToStorage();
+      finalizeSettingsChange('PIN обновлён');
+      return;
+    }
+  }
+
+  if (state.settingsMode === 'delete') {
+    // Should not reach here via PIN
+    return;
+  }
+}
+
+function handleSecurityConfirmation() {
+  if (state.settingsMode === 'set') {
+    if (state.pinStep === 'question') {
+      const questionInput = document.getElementById('security-question');
+      const question = questionInput?.value.trim();
+      if (!question) {
+        setState({ pinError: 'Введите вопрос' });
+        return;
+      }
+      setState({ securityQuestion: question });
+      resetPinEntry('answer');
+      render();
+      return;
+    }
+    if (state.pinStep === 'answer') {
+      const answerInput = document.getElementById('security-answer');
+      const answer = answerInput?.value.trim();
+      if (!answer) {
+        setState({ pinError: 'Введите ответ' });
+        return;
+      }
+      setState({ securityAnswer: answer, passwordConfigured: true, showSettingsModal: false, settingsMode: null, pinError: null });
+      resetPinEntry('enter');
+      persistSecurityToStorage();
+      alert('PIN установлен — при входе появится экран ввода кода.');
+      render();
+      return;
+    }
+  }
+
+  if (state.settingsMode === 'delete' || state.settingsMode === 'wipe') {
+    const answerInput = document.getElementById('security-answer');
+    const answer = answerInput?.value.trim();
+    if (!answer) {
+      setState({ pinError: 'Введите ответ' });
+      return;
+    }
+    if (answer !== state.securityAnswer) {
+      setState({ pinError: 'Ответ не совпадает' });
+      return;
+    }
+    if (state.settingsMode === 'delete') {
+      resetSecuritySettings();
+      clearSecurityFromStorage();
+      setState({ showSettingsModal: false, settingsMode: null });
+      resetPinEntry('enter');
+      alert('PIN удалён.');
+      render();
+    } else {
+      // wipe data
+      wipeUserData();
+    }
+  }
+}
+
+function finalizeSettingsChange(message) {
+  setState({ showSettingsModal: false, settingsMode: null, pinError: null });
+  resetPinEntry('enter');
+  alert(message);
+  render();
+}
+
+function wipeUserData() {
+  // Here we simply reset state (server-side wipe should be separate endpoint)
+  resetSecuritySettings();
+  clearSecurityFromStorage();
+  setState({
+    overview: null,
+    tasks: [],
+    notes: [],
+    finances: [],
+    debts: [],
+    reminders: [],
+    sleepSessions: [],
+    healthMetrics: [],
+    personalEntries: [],
+    messages: [],
+    showSettingsModal: false,
+  });
+  resetPinEntry('enter');
+  alert('Все локальные данные очищены (серверные — отдельно через админа).');
+  render();
+}
+
+function render() {
+  renderRoot();
 }
 
 function tryTelegramLogin() {

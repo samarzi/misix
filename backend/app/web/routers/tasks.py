@@ -6,6 +6,7 @@ import logging
 
 from app.shared.config import settings
 from app.shared.supabase import get_supabase_client
+from app.web.auth import get_current_user_id
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -46,12 +47,6 @@ class TaskUpdate(BaseModel):
     estimated_hours: Optional[float] = None
     actual_hours: Optional[float] = None
     project_id: Optional[str] = None
-
-# Mock authentication for now - in real app, this would validate JWT token
-def get_current_user_id() -> str:
-    # TODO: Implement proper JWT authentication
-    # For now, return a mock user ID
-    return "550e8400-e29b-41d4-a716-446655440000"
 
 @router.get("/tasks", response_model=List[Task])
 async def get_tasks(
@@ -187,7 +182,7 @@ async def update_task(
         if not update_data:
             raise HTTPException(status_code=400, detail="No fields to update")
 
-        update_data["updated_at"] = "now()"
+        update_data["updated_at"] = datetime.utcnow().isoformat()
 
         response = supabase.table("tasks").update(update_data).eq("id", task_id).eq("user_id", user_id).execute()
 
@@ -237,7 +232,7 @@ async def update_task_status(
 
         response = supabase.table("tasks").update({
             "status": status,
-            "updated_at": "now()"
+            "updated_at": datetime.utcnow().isoformat()
         }).eq("id", task_id).eq("user_id", user_id).execute()
 
         if not response.data:

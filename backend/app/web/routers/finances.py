@@ -109,6 +109,40 @@ class DiaryEntry(DiaryEntryBase):
     created_at: datetime
     updated_at: datetime
 
+
+class FinanceDebtBase(BaseModel):
+    counterparty: str
+    amount: float
+    currency: str = "RUB"
+    direction: str  # 'owed_by_me' или 'owed_to_me'
+    status: str = "pending"
+    due_date: Optional[date] = None
+    notes: Optional[str] = None
+    category_id: Optional[str] = None
+
+
+class FinanceDebt(FinanceDebtBase):
+    id: str
+    user_id: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ReminderBase(BaseModel):
+    title: str
+    reminder_time: datetime
+    timezone: str = "Europe/Moscow"
+    status: str = "scheduled"
+    recurrence_rule: Optional[str] = None
+    payload: Optional[dict] = None
+
+
+class Reminder(ReminderBase):
+    id: str
+    user_id: str
+    created_at: datetime
+    updated_at: datetime
+
 class AssistantPersona(BaseModel):
     id: str
     name: str
@@ -377,3 +411,187 @@ async def get_finance_stats(
         "income_by_category": income_by_category,
         "transaction_count": len(transactions)
     }
+
+
+# =============================================
+# FINANCE DEBTS
+# =============================================
+
+@router.get("/debts", response_model=List[FinanceDebt])
+async def get_finance_debts(
+    status: Optional[str] = None,
+    direction: Optional[str] = None,
+    include_overdue: bool = False,
+    user_id: str = Depends(get_current_user_id)
+):
+    supabase = get_supabase_client()
+
+    query = supabase.table("finance_debts").select("*").eq("user_id", user_id)
+    if status:
+        query = query.eq("status", status)
+    if direction:
+        query = query.eq("direction", direction)
+    if not include_overdue:
+        query = query.neq("status", "overdue")
+
+    response = query.order("due_date", desc=False).execute()
+    return response.data or []
+
+
+@router.post("/debts", response_model=FinanceDebt)
+async def create_finance_debt(
+    debt: FinanceDebtBase,
+    user_id: str = Depends(get_current_user_id)
+):
+    supabase = get_supabase_client()
+
+    debt_data = {
+        "user_id": user_id,
+        "counterparty": debt.counterparty,
+        "amount": debt.amount,
+        "currency": debt.currency,
+        "direction": debt.direction,
+        "status": debt.status,
+        "due_date": debt.due_date,
+        "notes": debt.notes,
+        "category_id": debt.category_id,
+    }
+
+    response = supabase.table("finance_debts").insert(debt_data).execute()
+    if not response.data:
+        raise HTTPException(status_code=500, detail="Failed to create debt entry")
+    return response.data[0]
+
+
+@router.put("/debts/{debt_id}", response_model=FinanceDebt)
+async def update_finance_debt(
+    debt_id: str,
+    debt_update: FinanceDebtBase,
+    user_id: str = Depends(get_current_user_id)
+):
+    supabase = get_supabase_client()
+
+    update_data = {
+        "counterparty": debt_update.counterparty,
+        "amount": debt_update.amount,
+        "currency": debt_update.currency,
+        "direction": debt_update.direction,
+        "status": debt_update.status,
+        "due_date": debt_update.due_date,
+        "notes": debt_update.notes,
+        "category_id": debt_update.category_id,
+        "updated_at": datetime.utcnow().isoformat()
+    }
+
+    response = supabase.table("finance_debts").update(update_data).eq("id", debt_id).eq("user_id", user_id).execute()
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Debt not found")
+    return response.data[0]
+
+
+@router.post("/debts/{debt_id}/settle")
+async def settle_finance_debt(
+    debt_id: str,
+    user_id: str = Depends(get_current_user_id)
+):
+    supabase = get_supabase_client()
+
+    response = supabase.table("finance_debts").update({
+        "status": "paid",
+        "updated_at": datetime.utcnow().isoformat()
+    }).eq("id", debt_id).eq("user_id", user_id).execute()
+
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Debt not found")
+
+    return {"message": "Debt settled", "status": "paid"}
+
+
+# =============================================
+# REMINDERS
+# =============================================
+
+@router.get("/reminders", response_model=List[Reminder])
+async def get_reminders(
+    status: Optional[str] = None,
+    from_time: Optional[datetime] = None,
+    to_time: Optional[datetime] = None,
+    user_id: str = Depends(get_current_user_id)
+):
+    supabase = get_supabase_client()
+
+    query = supabase.table("reminders").select("*").eq("user_id", user_id)
+    if status:
+        query = query.eq("status", status)
+    if from_time:
+        query = query.gte("reminder_time", from_time.isoformat())
+    if to_time:
+        query = query.lte("reminder_time", to_time.isoformat())
+
+    response = query.order("reminder_time", desc=False).execute()
+    return response.data or []
+
+
+@router.post("/reminders", response_model=Reminder)
+async def create_reminder(
+    reminder: ReminderBase,
+    user_id: str = Depends(get_current_user_id)
+):
+    supabase = get_supabase_client()
+
+    reminder_data = {
+        "user_id": user_id,
+        "title": reminder.title,
+        "reminder_time": reminder.reminder_time,
+        "timezone": reminder.timezone,
+        "status": reminder.status,
+        "recurrence_rule": reminder.recurrence_rule,
+        "payload": reminder.payload,
+    }
+
+    response = supabase.table("reminders").insert(reminder_data).execute()
+    if not response.data:
+        raise HTTPException(status_code=500, detail="Failed to create reminder")
+    return response.data[0]
+
+
+@router.put("/reminders/{reminder_id}", response_model=Reminder)
+async def update_reminder(
+    reminder_id: str,
+    reminder_update: ReminderBase,
+    user_id: str = Depends(get_current_user_id)
+):
+    supabase = get_supabase_client()
+
+    update_data = {
+        "title": reminder_update.title,
+        "reminder_time": reminder_update.reminder_time,
+        "timezone": reminder_update.timezone,
+        "status": reminder_update.status,
+        "recurrence_rule": reminder_update.recurrence_rule,
+        "payload": reminder_update.payload,
+        "updated_at": datetime.utcnow().isoformat()
+    }
+
+    response = supabase.table("reminders").update(update_data).eq("id", reminder_id).eq("user_id", user_id).execute()
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Reminder not found")
+    return response.data[0]
+
+
+@router.post("/reminders/{reminder_id}/cancel")
+async def cancel_reminder(
+    reminder_id: str,
+    user_id: str = Depends(get_current_user_id)
+):
+    supabase = get_supabase_client()
+
+    response = supabase.table("reminders").update({
+        "status": "cancelled",
+        "updated_at": datetime.utcnow().isoformat()
+    }).eq("id", reminder_id).eq("user_id", user_id).execute()
+
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Reminder not found")
+
+    return {"message": "Reminder cancelled", "status": "cancelled"}

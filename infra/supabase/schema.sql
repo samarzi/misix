@@ -244,6 +244,120 @@ create table if not exists assistant_messages (
 create index if not exists idx_assistant_messages_session on assistant_messages (session_id);
 create index if not exists idx_assistant_messages_user on assistant_messages (user_id);
 
+-- Finance categories
+create table if not exists finance_categories (
+    id uuid primary key default uuid_generate_v4(),
+    user_id uuid not null,
+    name text not null,
+    type text not null check (type in ('income', 'expense')),
+    color text,
+    icon text,
+    parent_id uuid,
+    is_default boolean default false,
+    sort_order integer default 0,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    constraint finance_categories_user_fk foreign key (user_id)
+        references users (id) on delete cascade,
+    constraint finance_categories_parent_fk foreign key (parent_id)
+        references finance_categories (id) on delete cascade
+);
+
+drop trigger if exists set_finance_categories_updated_at on finance_categories;
+create trigger set_finance_categories_updated_at
+    before update on finance_categories
+    for each row
+    execute procedure trigger_set_timestamp();
+
+create index if not exists idx_finance_categories_user on finance_categories (user_id);
+create index if not exists idx_finance_categories_type on finance_categories (user_id, type);
+
+-- Finance transactions
+create table if not exists finance_transactions (
+    id uuid primary key default uuid_generate_v4(),
+    user_id uuid not null,
+    category_id uuid,
+    amount numeric(12,2) not null,
+    currency text default 'RUB',
+    type text not null check (type in ('income', 'expense')),
+    description text,
+    merchant text,
+    payment_method text,
+    tags text[],
+    transaction_date timestamptz not null default now(),
+    notes text,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    constraint finance_transactions_user_fk foreign key (user_id)
+        references users (id) on delete cascade,
+    constraint finance_transactions_category_fk foreign key (category_id)
+        references finance_categories (id) on delete set null
+);
+
+drop trigger if exists set_finance_transactions_updated_at on finance_transactions;
+create trigger set_finance_transactions_updated_at
+    before update on finance_transactions
+    for each row
+    execute procedure trigger_set_timestamp();
+
+create index if not exists idx_finance_transactions_user on finance_transactions (user_id);
+create index if not exists idx_finance_transactions_category on finance_transactions (category_id);
+create index if not exists idx_finance_transactions_date on finance_transactions (user_id, transaction_date desc);
+
+-- Finance debts
+create table if not exists finance_debts (
+    id uuid primary key default uuid_generate_v4(),
+    user_id uuid not null,
+    counterparty text not null,
+    amount numeric(12,2) not null,
+    currency text default 'RUB',
+    direction text not null check (direction in ('owed_by_me', 'owed_to_me')),
+    status text not null default 'pending' check (status in ('pending', 'paid', 'overdue', 'cancelled')),
+    due_date date,
+    notes text,
+    category_id uuid,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    constraint finance_debts_user_fk foreign key (user_id)
+        references users (id) on delete cascade,
+    constraint finance_debts_category_fk foreign key (category_id)
+        references finance_categories (id) on delete set null
+);
+
+drop trigger if exists set_finance_debts_updated_at on finance_debts;
+create trigger set_finance_debts_updated_at
+    before update on finance_debts
+    for each row
+    execute procedure trigger_set_timestamp();
+
+create index if not exists idx_finance_debts_user on finance_debts (user_id);
+create index if not exists idx_finance_debts_due on finance_debts (user_id, due_date);
+
+-- Reminders schedule
+create table if not exists reminders (
+    id uuid primary key default uuid_generate_v4(),
+    user_id uuid not null,
+    title text not null,
+    reminder_time timestamptz not null,
+    timezone text default 'Europe/Moscow',
+    status text not null default 'scheduled' check (status in ('scheduled', 'sent', 'cancelled')),
+    recurrence_rule text,
+    payload jsonb,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    constraint reminders_user_fk foreign key (user_id)
+        references users (id) on delete cascade
+);
+
+drop trigger if exists set_reminders_updated_at on reminders;
+create trigger set_reminders_updated_at
+    before update on reminders
+    for each row
+    execute procedure trigger_set_timestamp();
+
+create index if not exists idx_reminders_user on reminders (user_id);
+create index if not exists idx_reminders_time on reminders (user_id, reminder_time);
+
 -- AI Assistant conversation summaries
 create table if not exists assistant_conversation_summaries (
     id uuid primary key default uuid_generate_v4(),

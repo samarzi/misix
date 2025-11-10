@@ -6,11 +6,13 @@ import logging
 import re
 import json
 from datetime import datetime, timedelta, date, timezone
+from zoneinfo import ZoneInfo
 from typing import Final, Optional
 from collections import deque
 
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, Update
+from telegram.constants import ChatAction
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from app.shared.config import settings
@@ -1562,6 +1564,8 @@ async def process_and_save_structured_data(message, user_id: str, text: str, tel
             'create_task',
             'create_note',
             'finance_transaction',
+            'create_debt',
+            'create_reminder',
             'mood_entry',
             'diary_entry',
             'personal_data',
@@ -1619,7 +1623,171 @@ async def save_task_data(user_id: str, title: str, description: str, deadline: s
         logger.info(f"Task saved: {title}")
 
     except Exception as e:
-        logger.warning(f"Failed to save task: {e}")
+        logger.warning(f"Failed to save note: {e}")
+
+
+def _parse_amount(text: str) -> Optional[float]:
+    match = re.search(r"(\d+(?:[\.,]\d{1,2})?)", text)
+    if not match:
+        return None
+    return float(match.group(1).replace(',', '.'))
+
+
+def _parse_counterparty(text: str) -> Optional[str]:
+    match = re.search(r"(\b[А-ЯA-ZЁ][а-яa-zё]+(?:\s+[А-ЯA-ZЁ][а-яa-zё]+)*)", text)
+    if match:
+        return match.group(1)
+    if 'я' in text.lower() or 'мне' in text.lower():
+        return 'лично'
+    return None
+
+
+def _parse_direction(text: str) -> str:
+    lowered = text.lower()
+    if any(keyword in lowered for keyword in ['мне должны', 'мне вернут', 'вернут мне', 'должны вернуть', 'он должен', 'она должна', 'они должны']):
+        return 'owed_to_me'
+    if any(keyword in lowered for keyword in ['я должен', 'я верну', 'я вернул', 'я занял', 'я займ', 'я одолжил']):
+        return 'owed_by_me'
+    if 'мне' in lowered and 'должен' in lowered:
+        return 'owed_to_me'
+    if 'должен' in lowered:
+        return 'owed_by_me'
+    return 'owed_by_me'
+
+
+def _parse_due_date(text: str) -> Optional[str]:
+    lowered = text.lower()
+    today = datetime.now().date()
+    if 'сегодня' in lowered:
+        return today.isoformat()
+    if 'завтра' in lowered:
+        return (today + timedelta(days=1)).isoformat()
+    if 'послезавтра' in lowered:
+        return (today + timedelta(days=2)).isoformat()
+    match = re.search(r"(\d{1,2})\.(\d{1,2})(?:\.(\d{2,4}))?", text)
+    if match:
+        day = int(match.group(1))
+        month = int(match.group(2))
+        year = int(match.group(3)) if match.group(3) else today.year
+        try:
+            return date(year, month, day).isoformat()
+        except Exception as e:
+            logger.warning(f"Failed to save finance data: {e}")
+    return None
+
+
+async def save_debt_entry(
+    user_id: str,
+    *,
+    counterparty: str,
+    amount: float,
+    direction: str,
+    due_date: str | None,
+    notes: str | None = None,
+    telegram_id: int | None = None,
+) -> None:
+    if not supabase_available():
+        return
+
+    payload = {
+        "user_id": user_id,
+        "counterparty": counterparty,
+        "amount": amount,
+        "currency": "RUB",
+        "direction": direction,
+        "status": "pending",
+        "due_date": due_date,
+        "notes": notes,
+    }
+    if telegram_id is not None:
+        payload["telegram_id"] = telegram_id
+
+    try:
+        supabase = get_supabase_client()
+        await supabase.table("finance_debts").insert(payload).execute()
+        logger.info("Debt entry saved: %s", counterparty)
+    except Exception as exc:
+        logger.warning("Failed to save debt entry: %s", exc)
+
+
+async def save_reminder_entry(
+    user_id: str,
+    *,
+    title: str,
+    reminder_time: datetime,
+    timezone_name: str,
+    recurrence_rule: str | None = None,
+    payload_data: dict | None = None,
+    telegram_id: int | None = None,
+) -> None:
+    if not supabase_available():
+        return
+
+    reminder_dt = reminder_time
+    if reminder_dt.tzinfo is None:
+        try:
+            reminder_dt = reminder_dt.replace(tzinfo=ZoneInfo(timezone_name))
+        except Exception:  # noqa: BLE001
+            reminder_dt = reminder_dt.replace(tzinfo=ZoneInfo("Europe/Moscow"))
+            timezone_name = "Europe/Moscow"
+
+    data = {
+        "user_id": user_id,
+        "title": title,
+        "reminder_time": reminder_dt.isoformat(),
+        "timezone": timezone_name,
+        "status": "scheduled",
+        "recurrence_rule": recurrence_rule,
+        "payload": payload_data,
+    }
+    if telegram_id is not None:
+        data["telegram_id"] = telegram_id
+
+    try:
+        supabase = get_supabase_client()
+        await supabase.table("reminders").insert(data).execute()
+        logger.info("Reminder saved for %s at %s", user_id, reminder_dt.isoformat())
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to save reminder: %s", exc)
+
+
+def _parse_datetime_with_timezone(text: str) -> tuple[Optional[datetime], Optional[str]]:
+    lowered = text.lower()
+    now = datetime.now()
+    timezone_name = None
+    if 'мск' in lowered or 'москов' in lowered or 'msk' in lowered:
+        timezone_name = 'Europe/Moscow'
+    elif 'utc' in lowered:
+        timezone_name = 'UTC'
+
+    match = re.search(r"(\d{1,2}):(\d{2})", text)
+    if match:
+        hours = int(match.group(1))
+        minutes = int(match.group(2))
+        base_date = now.date()
+        if 'завтра' in lowered:
+            base_date = base_date + timedelta(days=1)
+        elif 'послезавтра' in lowered:
+            base_date = base_date + timedelta(days=2)
+        elif 'сегодня' not in lowered:
+            match_date = re.search(r"(\d{1,2})\.(\d{1,2})(?:\.(\d{2,4}))?", text)
+            if match_date:
+                day = int(match_date.group(1))
+                month = int(match_date.group(2))
+                year = int(match_date.group(3)) if match_date.group(3) else base_date.year
+                try:
+                    base_date = date(year, month, day)
+                except ValueError:
+                    base_date = now.date()
+        try:
+            reminder_dt = datetime.combine(base_date, datetime.min.time()).replace(hour=hours, minute=minutes)
+            if timezone_name:
+                tz = ZoneInfo(timezone_name)
+                reminder_dt = reminder_dt.replace(tzinfo=tz)
+            return reminder_dt, timezone_name or 'Europe/Moscow'
+        except ValueError:
+            return None, timezone_name or 'Europe/Moscow'
+    return None, timezone_name or 'Europe/Moscow'
 
 
 async def save_note_data(user_id: str, title: str, content: str) -> None:
@@ -2030,8 +2198,16 @@ def determine_intent_simple(text: str) -> str:
     text_lower = text.lower()
 
     # Finance transactions
-    if any(word in text_lower for word in ['потратил', 'купил', 'заплатил', 'расход', 'цена', 'получил', 'заработал', 'доход', 'зарплата']):
+    if any(word in text_lower for word in ['потратил', 'купил', 'заплатил', 'расход', 'цена', 'получил', 'заработал', 'доход', 'зарплата', 'оплата']):
         return 'finance_transaction'
+
+    # Debts
+    if any(word in text_lower for word in ['долг', 'должен', 'одолжил', 'вернуть', 'занял', 'занять']):
+        return 'create_debt'
+
+    # Reminders
+    if any(word in text_lower for word in ['напомни', 'напоминание', 'напомни мне', 'напомин', 'не забудь']):
+        return 'create_reminder'
 
     # Task creation (enhanced)
     if any(word in text_lower for word in ['добавь задачу', 'создай задачу', 'новая задача', 'задача', 'сделать', 'напомни']):
@@ -2461,10 +2637,7 @@ async def execute_intent(
 
         elif intent == 'create_task':
             # Show typing for database operation
-            await message.chat.bot.send_chat_action(
-                chat_id=message.chat.id,
-                action="typing"
-            )
+            await message.chat.send_action(action="typing")
             
             # Create task
             task_data = {
@@ -2490,10 +2663,7 @@ async def execute_intent(
 
         elif intent == 'create_note':
             # Show typing for database operation
-            await message.chat.bot.send_chat_action(
-                chat_id=message.chat.id,
-                action="typing"
-            )
+            await message.chat.send_action(action=ChatAction.TYPING)
             
             # Create note
             note_data = {
@@ -2513,6 +2683,65 @@ async def execute_intent(
         elif intent == 'personal_data':
             # Handle personal data (logins, contacts)
             await handle_personal_data(message, user_id, description)
+
+        elif intent == 'create_debt':
+            text_for_processing = raw_text or description
+            amount = _parse_amount(text_for_processing)
+            if amount is None:
+                await message.reply_text(
+                    "❌ Не понял сумму долга. Напиши, например: 'Долг 2000 рублей Сергею'."
+                )
+                return
+
+            counterparty = _parse_counterparty(text_for_processing) or "лично"
+            direction = _parse_direction(text_for_processing)
+            due_date = _parse_due_date(text_for_processing)
+
+            await save_debt_entry(
+                user_id,
+                counterparty=counterparty,
+                amount=amount,
+                direction=direction,
+                due_date=due_date,
+                notes=text_for_processing,
+                telegram_id=telegram_id,
+            )
+
+            due_part = f" до {due_date}" if due_date else ""
+            direction_text = "ты должен" if direction == 'owed_by_me' else "тебе должны"
+            await message.reply_text(
+                f"📒 Зафиксировал долг {amount:.2f} ₽ — {counterparty} ({direction_text}){due_part}."
+            )
+
+        elif intent == 'create_reminder':
+            text_for_processing = raw_text or description
+            reminder_dt, tz_name = _parse_datetime_with_timezone(text_for_processing)
+            if reminder_dt is None:
+                await message.reply_text(
+                    "❌ Не понял время напоминания. Напиши, например: 'Напомни завтра в 08:00 позвонить маме'."
+                )
+                return
+
+            timezone_name = tz_name or 'Europe/Moscow'
+            title = re.sub(r"(?i)напомни( мне|,| пожалуйста)?", "", text_for_processing).strip()
+            if not title:
+                title = "Напоминание"
+
+            await save_reminder_entry(
+                user_id,
+                title=title,
+                reminder_time=reminder_dt,
+                timezone_name=timezone_name,
+                payload_data={"source": "telegram", "raw": text_for_processing},
+                telegram_id=telegram_id,
+            )
+
+            local_time = reminder_dt
+            if local_time.tzinfo is not None:
+                local_time = local_time.astimezone(ZoneInfo(timezone_name))
+            await message.reply_text(
+                f"⏰ Напоминание запланировано на {local_time.strftime('%d.%m %H:%M')} ({timezone_name})."
+            )
 
         elif intent == 'health_entry':
             text_for_processing = raw_text or description
@@ -2758,7 +2987,11 @@ def get_fallback_response(user_text: str) -> str:
 
     # Task-related
     if any(word in text_lower for word in ['задач', 'task']):
-        return "✅ Для создания задачи напишите: 'Добавь задачу [название] [когда]'\n\nНапример: 'Добавь задачу купить продукты на завтра'"
+        return 'list_tasks'
+    if any(word in text_lower for word in ['напомни', 'reminder']):
+        return 'reminder'
+    if any(word in text_lower for word in ['долг', 'debt']):
+        return 'debt'
 
     # Note-related
     if any(word in text_lower for word in ['заметк', 'note']):

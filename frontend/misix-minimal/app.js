@@ -79,9 +79,12 @@ const state = {
   userLabel: null,
   loading: false,
   error: null,
+  overview: null,
   tasks: [],
   notes: [],
   finances: [],
+  debts: [],
+  reminders: [],
   sleepSessions: [],
   healthMetrics: [],
   personalEntries: [],
@@ -276,9 +279,12 @@ async function loadData() {
     setState({
       loading: false,
       error: null,
+      overview: data.overview ?? null,
       tasks: data.tasks ?? [],
       notes: data.notes ?? [],
       finances: data.finances ?? [],
+      debts: data.debts ?? [],
+      reminders: data.reminders ?? [],
       sleepSessions: data.sleepSessions ?? [],
       healthMetrics: data.healthMetrics ?? [],
       personalEntries: data.personalEntries ?? [],
@@ -299,13 +305,22 @@ function logout() {
   setState({
     userId: null,
     userLabel: null,
+    overview: null,
     tasks: [],
     notes: [],
     finances: [],
+    debts: [],
+    reminders: [],
     sleepSessions: [],
     lastUpdated: null,
     error: null,
   });
+}
+
+function formatNumber(value, options = {}) {
+  if (value == null || Number.isNaN(Number(value))) return '—';
+  const formatter = new Intl.NumberFormat('ru-RU', options);
+  return formatter.format(value);
 }
 
 function renderLogin() {
@@ -348,6 +363,9 @@ function renderToolbar() {
 
 function renderTasks() {
   const { tasks } = state;
+  const total = state.overview?.tasks?.total ?? tasks.length;
+  const openCount = state.overview?.tasks?.open;
+  const completedCount = state.overview?.tasks?.completed;
   const content = tasks.length === 0
     ? '<div class="empty">Задачи еще не добавлены. Создай задачу через бота, и она появится здесь.</div>'
     : tasks.map((task) => `
@@ -367,7 +385,7 @@ function renderTasks() {
     <div class="card">
       <div class="section-header">
         <h3>Задачи</h3>
-        <small>${tasks.length} шт.</small>
+        <small>${total} шт.${openCount != null ? ` · в работе: ${openCount}` : ''}${completedCount != null ? ` · готово: ${completedCount}` : ''}</small>
       </div>
       <div class="grid">${content}</div>
     </div>
@@ -376,6 +394,7 @@ function renderTasks() {
 
 function renderNotes() {
   const { notes } = state;
+  const total = state.overview?.notes?.total ?? notes.length;
   const content = notes.length === 0
     ? '<div class="empty">Заметки появятся тут после создания через ассистента.</div>'
     : notes.map((note) => `
@@ -390,7 +409,7 @@ function renderNotes() {
     <div class="card">
       <div class="section-header">
         <h3>Заметки</h3>
-        <small>${notes.length} шт.</small>
+        <small>${total} шт.</small>
       </div>
       <div class="grid">${content}</div>
     </div>
@@ -399,6 +418,7 @@ function renderNotes() {
 
 function renderFinances() {
   const { finances } = state;
+  const summary = state.overview?.finances;
   if (finances.length === 0) {
     return `
       <div class="card">
@@ -434,11 +454,172 @@ function renderFinances() {
       <div class="section-header">
         <h3>Финансы</h3>
         <div class="tags">
-          <span class="tag green">доходов: ${formatAmount(totalIncome)}</span>
-          <span class="tag red">расходов: ${formatAmount(totalExpense)}</span>
+          <span class="tag green">доходов: ${formatAmount(summary?.income ?? totalIncome)}</span>
+          <span class="tag red">расходов: ${formatAmount(summary?.expense ?? totalExpense)}</span>
+          <span class="tag">баланс: ${formatAmount(summary?.balance ?? (totalIncome - totalExpense))}</span>
         </div>
       </div>
       <div class="grid">${rows}</div>
+    </div>
+  `;
+}
+
+function renderDebts() {
+  const { debts } = state;
+  const overviewDebts = state.overview?.debts;
+  if (!debts.length) {
+    return `
+      <div class="card">
+        <div class="section-header">
+          <h3>Долги</h3>
+          <small>${formatNumber(overviewDebts?.total ?? 0)} записей</small>
+        </div>
+        <div class="empty">Попроси бота зафиксировать долг, и он появится здесь.</div>
+      </div>
+    `;
+  }
+
+  const rows = debts.map((debt) => {
+    const statusLabel = debt.status === 'paid' ? '✅ закрыт' : debt.status === 'overdue' ? '⚠️ просрочен' : '⏳ активен';
+    return `
+      <div class="item">
+        <strong>${debt.counterparty}</strong>
+        <span>${statusLabel}</span>
+        <div class="tags">
+          <span class="tag">${debt.direction === 'owed_by_me' ? 'я должен' : 'мне должны'}</span>
+          <span class="tag">${formatAmount(debt.amount)}</span>
+          ${debt.due_date ? `<span class="tag">до ${formatDate(debt.due_date)}</span>` : ''}
+        </div>
+        ${debt.notes ? `<span>${debt.notes}</span>` : ''}
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="card">
+      <div class="section-header">
+        <h3>Долги</h3>
+        <small>${formatNumber(overviewDebts?.total ?? debts.length)} записей · открыто: ${formatNumber(overviewDebts?.openCount ?? debts.length)}</small>
+      </div>
+      <div class="grid">${rows}</div>
+    </div>
+  `;
+}
+
+function renderReminders() {
+  const { reminders } = state;
+  const overviewReminders = state.overview?.reminders;
+  if (!reminders.length) {
+    const nextText = overviewReminders?.next ? `· ближайшее: ${formatDateTime(overviewReminders.next)}` : '';
+    return `
+      <div class="card">
+        <div class="section-header">
+          <h3>Напоминания</h3>
+          <small>${formatNumber(overviewReminders?.total ?? 0)} всего ${nextText}</small>
+        </div>
+        <div class="empty">Скажи боту «Напомни мне...», и здесь появится список предстоящих уведомлений.</div>
+      </div>
+    `;
+  }
+
+  const rows = reminders.map((reminder) => `
+    <div class="item">
+      <strong>${reminder.title}</strong>
+      <span class="timestamp">${formatDateTime(reminder.reminder_time)}</span>
+      <div class="tags">
+        <span class="tag ${reminder.status === 'scheduled' ? 'green' : 'secondary'}">${reminder.status}</span>
+        <span class="tag">${reminder.timezone}</span>
+      </div>
+      ${reminder.recurrence_rule ? `<small>Повторение: ${reminder.recurrence_rule}</small>` : ''}
+    </div>
+  `).join('');
+
+  const nextText = overviewReminders?.next ? `Ближайшее: ${formatDateTime(overviewReminders.next)}` : '';
+
+  return `
+    <div class="card">
+      <div class="section-header">
+        <h3>Напоминания</h3>
+        <small>${formatNumber(overviewReminders?.scheduled ?? reminders.length)} активных · ${nextText}</small>
+      </div>
+      <div class="grid">${rows}</div>
+    </div>
+  `;
+}
+
+function renderOverview() {
+  const { overview } = state;
+  if (!overview) {
+    return '';
+  }
+
+  const cards = [
+    {
+      title: 'Задачи',
+      primary: overview.tasks?.total ?? 0,
+      primaryLabel: 'всего',
+      secondary: overview.tasks?.open,
+      secondaryLabel: 'в работе',
+      icon: '🗂️',
+    },
+    {
+      title: 'Финансы',
+      primary: overview.finances?.balance ?? 0,
+      primaryLabel: 'баланс',
+      secondary: overview.finances?.income ?? 0,
+      secondaryLabel: 'доходы',
+      icon: '💰',
+      formatter: (value) => formatAmount(value),
+    },
+    {
+      title: 'Долги',
+      primary: overview.debts?.openCount ?? 0,
+      primaryLabel: 'открыто',
+      secondary: overview.debts?.openAmount ?? 0,
+      secondaryLabel: '₽ в работе',
+      icon: '📉',
+      formatter: (value, label) => label.includes('₽') ? formatAmount(value) : formatNumber(value),
+    },
+    {
+      title: 'Напоминания',
+      primary: overview.reminders?.scheduled ?? 0,
+      primaryLabel: 'активных',
+      secondary: overview.reminders?.next ? formatDateTime(overview.reminders.next) : '—',
+      secondaryLabel: 'ближайшее',
+      icon: '⏰',
+      formatter: (value) => value,
+    },
+    {
+      title: 'Заметки',
+      primary: overview.notes?.total ?? 0,
+      primaryLabel: 'всего',
+      secondary: overview.personal?.total ?? 0,
+      secondaryLabel: 'личных записей',
+      icon: '📝',
+    },
+  ];
+
+  const items = cards.map((card) => {
+    const formatter = card.formatter || ((value) => formatNumber(value));
+    return `
+      <div class="overview-item">
+        <div class="overview-icon">${card.icon}</div>
+        <div class="overview-content">
+          <div class="overview-title">${card.title}</div>
+          <div class="overview-metric">${formatter(card.primary, card.primaryLabel)} <span>${card.primaryLabel}</span></div>
+          <div class="overview-secondary">${formatter(card.secondary, card.secondaryLabel)} <span>${card.secondaryLabel}</span></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="card overview">
+      <div class="section-header">
+        <h3>Сводка</h3>
+        <small>Единое состояние по данным MISIX</small>
+      </div>
+      <div class="overview-grid">${items}</div>
     </div>
   `;
 }
@@ -601,9 +782,12 @@ function renderPersonalData() {
 function renderDashboard() {
   return `
     ${renderToolbar()}
+    ${renderOverview()}
     ${renderTasks()}
     ${renderNotes()}
     ${renderFinances()}
+    ${renderDebts()}
+    ${renderReminders()}
     ${renderSleep()}
     ${renderHealth()}
     ${renderPersonalData()}

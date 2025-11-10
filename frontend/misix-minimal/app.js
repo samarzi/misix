@@ -74,12 +74,164 @@ const DEV_MODE_PROFILE = {
   fullName: 'samarzi',
 };
 
+const DASHBOARD_SECTIONS = [
+  {
+    key: 'analytics',
+    icon: '📊',
+    title: 'Аналитика',
+    summary: () => {
+      const overview = state.overview;
+      if (!overview) {
+        return {
+          primary: 'Нет данных',
+          secondary: 'Обнови дашборд для аналитики',
+        };
+      }
+
+      const totalTasks = overview.tasks?.total ?? 0;
+      const completedTasks = overview.tasks?.completed ?? 0;
+      const balance = overview.finances?.balance ?? 0;
+      const openDebts = overview.debts?.openAmount ?? 0;
+      const reminders = overview.reminders?.scheduled ?? 0;
+
+      return {
+        primary: `${formatNumber(completedTasks)} из ${formatNumber(totalTasks)} задач решено`,
+        secondary: `Баланс ${formatAmount(balance)} · Долги ${formatAmount(openDebts)} · Напоминаний ${formatNumber(reminders)}`,
+      };
+    },
+    render: renderAnalyticsDetail,
+  },
+  {
+    key: 'tasks',
+    icon: '🗂️',
+    title: 'Задачи',
+    summary: () => {
+      const total = state.overview?.tasks?.total ?? state.tasks.length;
+      const open = state.overview?.tasks?.open ?? 0;
+      const done = state.overview?.tasks?.completed ?? 0;
+      return {
+        primary: `${total} ${pluralize(total, ['задача', 'задачи', 'задач'])}`,
+        secondary: total ? `В работе: ${open} · Готово: ${done}` : 'Нет задач',
+      };
+    },
+    render: renderTasksDetail,
+  },
+  {
+    key: 'notes',
+    icon: '📝',
+    title: 'Заметки',
+    summary: () => {
+      const total = state.overview?.notes?.total ?? state.notes.length;
+      const personal = state.overview?.personal?.total ?? 0;
+      return {
+        primary: `${total} ${pluralize(total, ['заметка', 'заметки', 'заметок'])}`,
+        secondary: personal ? `Личных: ${personal}` : 'Личных записей нет',
+      };
+    },
+    render: renderNotesDetail,
+  },
+  {
+    key: 'finances',
+    icon: '💰',
+    title: 'Финансы',
+    summary: () => {
+      const balance = state.overview?.finances?.balance;
+      const income = state.overview?.finances?.income;
+      const expense = state.overview?.finances?.expense;
+      return {
+        primary: balance != null ? formatAmount(balance) : 'Баланс неизвестен',
+        secondary: income != null && expense != null
+          ? `Доходы ${formatAmount(income)} · Расходы ${formatAmount(expense)}`
+          : 'Попробуй добавить операции',
+      };
+    },
+    render: renderFinancesDetail,
+  },
+  {
+    key: 'debts',
+    icon: '📉',
+    title: 'Долги',
+    summary: () => {
+      const openCount = state.overview?.debts?.openCount ?? 0;
+      const openAmount = state.overview?.debts?.openAmount;
+      return {
+        primary: `${openCount} открыто`,
+        secondary: openAmount ? `Сумма ${formatAmount(openAmount)}` : 'Задолженностей нет',
+      };
+    },
+    render: renderDebtsDetail,
+  },
+  {
+    key: 'reminders',
+    icon: '⏰',
+    title: 'Напоминания',
+    summary: () => {
+      const scheduled = state.overview?.reminders?.scheduled ?? state.reminders.length;
+      const next = state.overview?.reminders?.next;
+      return {
+        primary: `${scheduled} активных`,
+        secondary: next ? `Ближайшее: ${formatDateTime(next)}` : 'Не запланировано',
+      };
+    },
+    render: renderRemindersDetail,
+  },
+  {
+    key: 'sleep',
+    icon: '😴',
+    title: 'Сон',
+    summary: () => {
+      const sessions = state.sleepSessions.length;
+      return {
+        primary: `${sessions} ${pluralize(sessions, ['сессия', 'сессии', 'сессий'])}`,
+        secondary: sessions ? 'Последние результаты внутри' : 'Нет записей сна',
+      };
+    },
+    render: renderSleepDetail,
+  },
+  {
+    key: 'health',
+    icon: '🩺',
+    title: 'Здоровье',
+    summary: () => {
+      const metrics = state.healthMetrics.length;
+      return {
+        primary: `${metrics} ${pluralize(metrics, ['метрика', 'метрики', 'метрик'])}`,
+        secondary: metrics ? 'Последние измерения внутри' : 'Нет измерений',
+      };
+    },
+    render: renderHealthDetail,
+  },
+  {
+    key: 'personal',
+    icon: '🔐',
+    title: 'Личные данные',
+    summary: () => {
+      const entries = state.personalEntries.length;
+      return {
+        primary: `${entries} ${pluralize(entries, ['запись', 'записи', 'записей'])}`,
+        secondary: entries ? 'Полные детали внутри' : 'Пока пусто',
+      };
+    },
+    render: renderPersonalDataDetail,
+  },
+];
+
+function pluralize(count, forms) {
+  const n = Math.abs(count) % 100;
+  const n1 = n % 10;
+  if (n > 10 && n < 20) return forms[2];
+  if (n1 > 1 && n1 < 5) return forms[1];
+  if (n1 === 1) return forms[0];
+  return forms[2];
+}
+
 const state = {
   userId: null,
   userLabel: null,
   loading: false,
   error: null,
-  view: 'dashboard',
+  view: 'summary',
+  detailSection: null,
   showSettingsModal: false,
   settingsMode: null,
   passwordConfigured: false,
@@ -102,6 +254,7 @@ const state = {
   healthMetrics: [],
   personalEntries: [],
   messages: [],
+  financeCategories: [],
   healthFilterType: 'all',
   healthFilterPeriod: '30',
   lastUpdated: null,
@@ -372,6 +525,7 @@ async function loadData() {
       healthMetrics: data.healthMetrics ?? [],
       personalEntries: data.personalEntries ?? [],
       messages: data.messages ?? [],
+      financeCategories: data.financeCategories ?? [],
       lastUpdated: new Date(),
     });
   } catch (error) {
@@ -388,7 +542,7 @@ function logout() {
   setState({
     userId: null,
     userLabel: null,
-    view: 'dashboard',
+    view: 'summary',
     unlocked: !state.passwordConfigured,
     overview: null,
     tasks: [],
@@ -446,7 +600,121 @@ function renderToolbar() {
   `;
 }
 
-function renderTasks() {
+function renderDetailView() {
+  const section = DASHBOARD_SECTIONS.find((item) => item.key === state.detailSection);
+  if (!section) {
+    return `
+      <div class="card">
+        <div class="section-header">
+          <h3>Раздел не найден</h3>
+          <button type="button" class="secondary" data-action="back-to-summary">Назад</button>
+        </div>
+        <div class="empty">Похоже, модуль ещё не реализован.</div>
+      </div>
+    `;
+  }
+
+  const summary = section.summary();
+
+  return `
+    <div class="card detail-header">
+      <div class="section-header">
+        <div class="detail-title">
+          <span class="detail-icon">${section.icon}</span>
+          <div>
+            <h3>${section.title}</h3>
+            <small>${summary.primary}</small>
+            <small>${summary.secondary}</small>
+          </div>
+        </div>
+        <button type="button" class="secondary" data-action="back-to-summary">← Назад</button>
+      </div>
+    </div>
+    ${section.render()}
+  `;
+}
+
+function renderAnalyticsDetail() {
+  const overview = state.overview;
+  if (!overview) {
+    return `
+      <div class="card">
+        <div class="empty">Аналитика появится после синхронизации данных.</div>
+      </div>
+    `;
+  }
+
+  const metrics = buildOverviewMetrics();
+  const metricCards = metrics.map((metric) => `
+      <div class="analytics-item">
+        <div class="analytics-label">${metric.title}</div>
+        <div class="analytics-value">${metric.formatter ? metric.formatter(metric.primary, metric.primaryLabel) : formatNumber(metric.primary)}</div>
+        <div class="analytics-caption">${metric.primaryLabel}</div>
+        <div class="analytics-secondary">${metric.formatter ? metric.formatter(metric.secondary, metric.secondaryLabel) : formatNumber(metric.secondary)} · ${metric.secondaryLabel}</div>
+      </div>
+    `).join('');
+
+  const activity = [
+    {
+      label: 'Всего заметок',
+      value: formatNumber(state.notes.length),
+    },
+    {
+      label: 'Личные записи',
+      value: formatNumber(state.personalEntries.length),
+    },
+    {
+      label: 'Напоминаний в работе',
+      value: formatNumber(overview.reminders?.scheduled ?? state.reminders.length),
+    },
+    {
+      label: 'Записей сна',
+      value: formatNumber(state.sleepSessions.length),
+    },
+    {
+      label: 'Метрик здоровья',
+      value: formatNumber(state.healthMetrics.length),
+    },
+  ];
+
+  const activityList = activity.map((item) => `
+      <li class="analytics-bullet">
+        <span>${item.label}</span>
+        <strong>${item.value}</strong>
+      </li>
+    `).join('');
+
+  const updatedText = state.lastUpdated
+    ? `${formatDate(state.lastUpdated)} ${state.lastUpdated.toLocaleTimeString('ru-RU')}`
+    : 'ещё не обновлялось';
+
+  return `
+    <div class="card">
+      <div class="section-header">
+        <div>
+          <h3>Ключевые показатели</h3>
+          <small>Синхронизация: ${updatedText}</small>
+        </div>
+      </div>
+      <div class="grid analytics-grid">
+        ${metricCards}
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-header">
+        <div>
+          <h3>Состояние данных</h3>
+          <small>Сводка по всем разделам</small>
+        </div>
+      </div>
+      <ul class="analytics-list">
+        ${activityList}
+      </ul>
+    </div>
+  `;
+}
+
+function renderTasksDetail() {
   const { tasks } = state;
   const total = state.overview?.tasks?.total ?? tasks.length;
   const openCount = state.overview?.tasks?.open;
@@ -477,7 +745,7 @@ function renderTasks() {
   `;
 }
 
-function renderNotes() {
+function renderNotesDetail() {
   const { notes } = state;
   const total = state.overview?.notes?.total ?? notes.length;
   const content = notes.length === 0
@@ -501,9 +769,10 @@ function renderNotes() {
   `;
 }
 
-function renderFinances() {
+function renderFinancesDetail() {
   const { finances } = state;
   const summary = state.overview?.finances;
+  const categories = state.financeCategories || [];
   if (finances.length === 0) {
     return `
       <div class="card">
@@ -522,6 +791,48 @@ function renderFinances() {
   const totalExpense = finances
     .filter((tx) => tx.type === 'expense')
     .reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
+
+  const groupedByCategory = finances.reduce((acc, tx) => {
+    const key = tx.category_id || 'uncategorized';
+    const bucket = acc.get(key) || [];
+    bucket.push(tx);
+    acc.set(key, bucket);
+    return acc;
+  }, new Map());
+
+  const categoryBlocks = categories.map((category) => {
+    const txs = groupedByCategory.get(category.id) || [];
+    if (txs.length === 0) {
+      return '';
+    }
+
+    const income = category.total_income ?? 0;
+    const expense = category.total_expense ?? 0;
+    const balance = income - expense;
+
+    const items = txs.map((tx) => `
+        <div class="item">
+          <strong>${tx.type === 'income' ? '💰 Доход' : '💸 Расход'} — ${formatAmount(tx.amount)}</strong>
+          <span>${tx.description || 'Без описания'}</span>
+          <div class="tags">
+            <span class="tag ${tx.type === 'income' ? 'green' : 'red'}">${tx.type}</span>
+            <span class="tag">${formatDate(tx.transaction_date)}</span>
+          </div>
+        </div>
+      `).join('');
+
+    return `
+      <div class="card category-card">
+        <div class="section-header">
+          <div>
+            <h3>${category.icon || '🏷️'} ${category.name || 'Категория'}</h3>
+            <small>Доходы ${formatAmount(income)} · Расходы ${formatAmount(expense)} · Баланс ${formatAmount(balance)}</small>
+          </div>
+        </div>
+        <div class="grid">${items}</div>
+      </div>
+    `;
+  }).filter(Boolean).join('');
 
   const rows = finances.map((tx) => `
     <div class="item">
@@ -546,10 +857,11 @@ function renderFinances() {
       </div>
       <div class="grid">${rows}</div>
     </div>
+    ${categoryBlocks}
   `;
 }
 
-function renderDebts() {
+function renderDebtsDetail() {
   const { debts } = state;
   const overviewDebts = state.overview?.debts;
   if (!debts.length) {
@@ -591,7 +903,7 @@ function renderDebts() {
   `;
 }
 
-function renderReminders() {
+function renderRemindersDetail() {
   const { reminders } = state;
   const overviewReminders = state.overview?.reminders;
   if (!reminders.length) {
@@ -709,7 +1021,7 @@ function renderOverview() {
   `;
 }
 
-function renderSleep() {
+function renderSleepDetail() {
   const { sleepSessions } = state;
   if (sleepSessions.length === 0) {
     return `
@@ -751,7 +1063,7 @@ function renderSleep() {
   `;
 }
 
-function renderHealth() {
+function renderHealthDetail() {
   const { healthMetrics, healthFilterType, healthFilterPeriod } = state;
   const availableTypes = getUniqueMetricTypes(healthMetrics);
   const filteredMetrics = filterHealthMetrics(healthMetrics);
@@ -812,7 +1124,7 @@ function renderHealth() {
   `;
 }
 
-function renderPersonalData() {
+function renderPersonalDataDetail() {
   const { personalEntries } = state;
   if (personalEntries.length === 0) {
     return `
@@ -864,19 +1176,39 @@ function renderPersonalData() {
   `;
 }
 
+function renderSummaryCards() {
+  const cards = DASHBOARD_SECTIONS.map((section) => {
+    const summary = section.summary();
+    return `
+      <div class="card overview summary-card" data-section="${section.key}">
+        <div class="summary-heading">
+          <div class="summary-title">
+            <span class="summary-icon">${section.icon}</span>
+            <div>
+              <h3>${section.title}</h3>
+              <small>${summary.primary}</small>
+            </div>
+          </div>
+          <button type="button" class="secondary summary-open" data-action="open-detail" data-section="${section.key}">Открыть</button>
+        </div>
+        <p class="summary-secondary">${summary.secondary}</p>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="grid summary-grid">
+      ${cards}
+    </div>
+  `;
+}
+
 function renderDashboard() {
   const overlay = state.passwordConfigured && !state.unlocked ? renderLockOverlay() : '';
+  const content = state.view === 'detail' ? renderDetailView() : renderSummaryCards();
   return `
     ${renderToolbar()}
-    ${renderOverview()}
-    ${renderTasks()}
-    ${renderNotes()}
-    ${renderFinances()}
-    ${renderDebts()}
-    ${renderReminders()}
-    ${renderSleep()}
-    ${renderHealth()}
-    ${renderPersonalData()}
+    ${content}
     ${renderFooter()}
     ${overlay}
   `;
@@ -1096,6 +1428,22 @@ function initDashboardListeners() {
   const logoutBtn = document.getElementById('logout-btn');
   if (logoutBtn) logoutBtn.addEventListener('click', logout);
 
+  document.querySelectorAll('[data-action="open-detail"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      const section = event.currentTarget.getAttribute('data-section');
+      if (!section) return;
+      setState({ view: 'detail', detailSection: section });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  });
+
+  document.querySelectorAll('[data-action="back-to-summary"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      setState({ view: 'summary', detailSection: null });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  });
+
   const openSettingsBtn = document.getElementById('open-settings');
   if (openSettingsBtn) {
     openSettingsBtn.addEventListener('click', () => {
@@ -1122,7 +1470,7 @@ function initSettingsListeners() {
   const closeSettings = document.getElementById('close-settings');
   if (closeSettings) {
     closeSettings.addEventListener('click', () => {
-      setState({ view: 'dashboard', showSettingsModal: false, settingsMode: null });
+      setState({ view: 'summary', showSettingsModal: false, settingsMode: null });
       resetPinEntry('enter');
     });
   }

@@ -70,6 +70,11 @@ async def get_dashboard_summary(user_id: str):
         personal_entries, personal_total = _fetch_limited("personal_data_entries", order="created_at", desc=True, limit=5)
         messages, _ = _fetch_limited("assistant_messages", order="created_at", desc=True, limit=20)
 
+        finance_categories_raw = _safe_select_all(
+            "finance_categories",
+            "id,name,type,color,icon,parent_id,is_default,sort_order"
+        )
+
         # Task stats
         task_status_rows = _safe_select_all("tasks", "status")
         task_statuses = Counter(item.get("status", "new") for item in task_status_rows)
@@ -77,16 +82,43 @@ async def get_dashboard_summary(user_id: str):
         task_completed = task_statuses.get("completed", 0)
 
         # Finance summaries
-        finance_all = _safe_select_all("finance_transactions", "amount,type")
+        finance_all = _safe_select_all("finance_transactions", "amount,type,category_id")
         total_income = 0.0
         total_expense = 0.0
+        category_totals: dict[str, dict[str, float]] = {}
         for item in finance_all:
             amount = float(item.get("amount") or 0)
             if item.get("type") == "income":
                 total_income += amount
+                category_id = item.get("category_id")
+                if category_id:
+                    bucket = category_totals.setdefault(category_id, {"income": 0.0, "expense": 0.0})
+                    bucket["income"] += amount
             else:
                 total_expense += amount
+                category_id = item.get("category_id")
+                if category_id:
+                    bucket = category_totals.setdefault(category_id, {"income": 0.0, "expense": 0.0})
+                    bucket["expense"] += amount
         finance_balance = total_income - total_expense
+
+        finance_categories = []
+        for category in sorted(finance_categories_raw, key=lambda row: (row.get("sort_order") or 0, row.get("name") or "")):
+            totals = category_totals.get(category.get("id"), {"income": 0.0, "expense": 0.0})
+            finance_categories.append(
+                {
+                    "id": category.get("id"),
+                    "name": category.get("name"),
+                    "type": category.get("type"),
+                    "color": category.get("color"),
+                    "icon": category.get("icon"),
+                    "parent_id": category.get("parent_id"),
+                    "is_default": category.get("is_default", False),
+                    "sort_order": category.get("sort_order", 0),
+                    "total_income": round(totals.get("income", 0.0), 2),
+                    "total_expense": round(totals.get("expense", 0.0), 2),
+                }
+            )
 
         # Debt summaries
         debt_all = _safe_select_all("finance_debts", "amount,status")
@@ -153,6 +185,7 @@ async def get_dashboard_summary(user_id: str):
             "healthMetrics": health_metrics,
             "personalEntries": personal_entries,
             "messages": messages,
+            "financeCategories": finance_categories,
             "overview": overview,
         }
     except Exception as exc:  # noqa: BLE001

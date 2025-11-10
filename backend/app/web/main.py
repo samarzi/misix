@@ -63,6 +63,20 @@ def create_app() -> FastAPI:
     # Telegram bot webhook (if needed)
     # app.include_router(bot_router, prefix="/bot", tags=["telegram"])
 
+    @app.on_event("startup")
+    async def startup_telegram_bot() -> None:
+        if not getattr(application, "_initialized", False):
+            await application.initialize()
+        if not getattr(application, "_running", False):
+            await application.start()
+
+    @app.on_event("shutdown")
+    async def shutdown_telegram_bot() -> None:
+        if getattr(application, "_running", False):
+            await application.stop()
+        if getattr(application, "_initialized", False):
+            await application.shutdown()
+
     # Telegram bot webhook endpoint
     @app.post("/bot/webhook")
     async def bot_webhook(request: Request) -> Response:
@@ -70,11 +84,6 @@ def create_app() -> FastAPI:
         try:
             # Get the JSON data from Telegram
             data = await request.json()
-
-            if not application.initialized:
-                await application.initialize()
-            if not application.running:
-                await application.start()
 
             # Process the update with the bot application
             update = Update.de_json(data, application.bot)

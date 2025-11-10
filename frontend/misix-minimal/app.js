@@ -67,6 +67,13 @@ const BACKEND_BASE_URL =
 
 let supabaseClient = null;
 
+const DEV_MODE_PASSWORD = '8985';
+const DEV_MODE_PROFILE = {
+  telegramId: 1346574159,
+  username: 't0g0r0t',
+  fullName: 'samarzi',
+};
+
 const state = {
   userId: null,
   userLabel: null,
@@ -88,6 +95,24 @@ const UUID_REGEX = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}
 
 function isUuid(value) {
   return UUID_REGEX.test(value);
+}
+
+function isTelegramWebApp() {
+  const webApp = window.Telegram?.WebApp;
+  if (!webApp) {
+    return false;
+  }
+
+  if (webApp.initDataUnsafe?.user) {
+    return true;
+  }
+
+  const platform = webApp.platform;
+  if (platform && platform !== 'unknown') {
+    return true;
+  }
+
+  return false;
 }
 
 function isTelegramId(value) {
@@ -262,7 +287,11 @@ async function loadData() {
     });
   } catch (error) {
     console.error('Failed to load data', error);
-    setState({ loading: false, error: 'Не удалось загрузить данные. Проверь соединение и попробуй снова.' });
+    const reason = error instanceof Error ? error.message : JSON.stringify(error);
+    setState({
+      loading: false,
+      error: `Не удалось загрузить данные: ${reason}`,
+    });
   }
 }
 
@@ -280,12 +309,14 @@ function logout() {
 }
 
 function renderLogin() {
+  const devModeAvailable = !isTelegramWebApp();
   return `
     <div class="login-wrapper card">
       <h1>MISIX</h1>
       <p>Авторизуйтесь через Telegram WebApp.</p>
       <form id="login-form">
         <button type="button" class="secondary" id="tg-login">Войти через Telegram</button>
+        ${devModeAvailable ? '<button type="button" id="dev-login">Режим разработчика</button>' : ''}
       </form>
     </div>
   `;
@@ -585,6 +616,8 @@ function render() {
     root.innerHTML = renderLogin();
     const tgButton = document.getElementById('tg-login');
     if (tgButton) tgButton.addEventListener('click', tryTelegramLogin);
+    const devButton = document.getElementById('dev-login');
+    if (devButton) devButton.addEventListener('click', tryDevLogin);
     return;
   }
 
@@ -612,7 +645,7 @@ function render() {
 }
 
 function tryTelegramLogin() {
-  if (!(window.Telegram && window.Telegram.WebApp)) {
+  if (!isTelegramWebApp()) {
     alert('Этот способ работает только из Telegram WebApp.');
     return;
   }
@@ -644,6 +677,62 @@ function tryTelegramLogin() {
     .catch((err) => {
       console.error('Telegram login failed', err);
       setState({ loading: false, error: 'Не удалось найти пользователя в базе. Напиши боту, чтобы он создал запись.' });
+    });
+}
+
+function tryDevLogin() {
+  const password = window.prompt('Введите пароль для режима разработчика');
+  if (password === null) {
+    return;
+  }
+
+  if (password.trim() !== DEV_MODE_PASSWORD) {
+    alert('Неверный пароль.');
+    return;
+  }
+
+  if (!supabaseClient) {
+    initSupabase();
+  }
+
+  setState({ loading: true, error: null });
+
+  supabaseClient
+    .from('users')
+    .select('id, full_name, username')
+    .eq('telegram_id', DEV_MODE_PROFILE.telegramId)
+    .limit(1)
+    .single()
+    .then(({ data, error }) => {
+      if (error || !data) {
+        throw error || new Error('Пользователь не найден в базе.');
+      }
+
+      const userData = {
+        ...data,
+        username: data.username || DEV_MODE_PROFILE.username,
+        full_name: data.full_name || DEV_MODE_PROFILE.fullName,
+        first_name: DEV_MODE_PROFILE.fullName,
+      };
+
+      const displayName = formatDisplayName('', userData, DEV_MODE_PROFILE.telegramId);
+
+      setState({
+        userId: data.id,
+        userLabel: displayName,
+        loading: false,
+        error: null,
+      });
+
+      loadData();
+    })
+    .catch((err) => {
+      console.error('Developer mode login failed', err);
+      const reason = err instanceof Error ? err.message : JSON.stringify(err);
+      setState({
+        loading: false,
+        error: `Режим разработчика недоступен: ${reason}`,
+      });
     });
 }
 

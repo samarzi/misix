@@ -5,6 +5,7 @@ from telegram import Update
 
 # Import AI functions from bot handlers
 from app.bot.handlers import get_ai_response, get_fallback_response
+from app.shared.config import settings
 from app.shared.supabase import get_supabase_client, supabase_available
 
 # Import Telegram bot application
@@ -28,9 +29,28 @@ def create_app() -> FastAPI:
     app = FastAPI(title="MISIX Backend", version="0.1.0")
 
     # Add CORS middleware for frontend
+    default_origins = [
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://localhost:8080",
+        "https://misix.netlify.app",
+    ]
+    configured_origins = settings.frontend_allowed_origins or []
+    allowed_origins = [
+        origin
+        for origin in default_origins + configured_origins
+        if origin
+    ]
+
+    # Extra safety net for Netlify deploy previews and subdomains
+    netlify_origin_regex = r"https://[\w.-]*netlify\.app"
+
+    logger.info("Configured CORS origins: %s", allowed_origins)
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://localhost:3000", "http://localhost:8080"],  # Vite dev server and test server
+        allow_origins=list(dict.fromkeys(allowed_origins)),  # Preserve order, remove duplicates
+        allow_origin_regex=netlify_origin_regex,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

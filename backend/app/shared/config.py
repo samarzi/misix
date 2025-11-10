@@ -44,6 +44,9 @@ try:
             "backend": {
                 "base_url": os.environ.get("BACKEND_BASE_URL")
             },
+            "frontend": {
+                "allowed_origins": os.environ.get("FRONTEND_ALLOWED_ORIGINS")
+            },
             "supabase": {
                 "url": os.environ.get("SUPABASE_URL"),
                 "anon_key": os.environ.get("SUPABASE_ANON_KEY"),
@@ -81,12 +84,31 @@ class Settings:
         self.supabase_anon_key = self._safe_get("supabase", "anon_key")
         self.supabase_service_key = self._safe_get("supabase", "service_key")
         self.encryption_key = self._safe_get("security", "encryption_key")
-        
+        self.frontend_allowed_origins = self._get_frontend_allowed_origins()
+
     def _safe_get(self, section, key):
         try:
             return config.get(section, {}).get(key)
         except Exception as e:
             logger.error(f"Error getting config {section}.{key}: {e}")
             return None
+
+    def _get_frontend_allowed_origins(self):
+        value = self._safe_get("frontend", "allowed_origins")
+        if not value:
+            value = os.environ.get("FRONTEND_ALLOWED_ORIGINS")
+
+        if not value:
+            return []
+
+        if isinstance(value, str):
+            parts = [part.strip() for part in value.split(",")]
+            return [part for part in parts if part]
+
+        if isinstance(value, (list, tuple, set)):
+            return [str(item).strip() for item in value if str(item).strip()]
+
+        logger.warning("Unsupported FRONTEND_ALLOWED_ORIGINS type: %s", type(value))
+        return []
 
 settings = Settings()

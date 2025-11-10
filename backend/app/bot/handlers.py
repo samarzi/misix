@@ -7,6 +7,8 @@ import re
 import json
 from datetime import datetime, timedelta, date, timezone
 from typing import Final, Optional
+from collections import deque
+
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, Update
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
@@ -24,6 +26,154 @@ from app.bot.yandex_gpt import (
 
 
 SLEEP_DELAY_MINUTES: Final = 15
+
+CONVERSATION_BUFFER_LIMIT: Final = 6
+SUMMARY_TRIGGER_MESSAGES: Final = 12
+SUMMARY_TABLE_NAME: Final = "assistant_conversation_summaries"
+MAX_STORED_MESSAGES_PER_USER: Final = 200
+
+_conversation_buffers: dict[str, deque] = {}
+_conversation_message_counts: dict[str, int] = {}
+_conversation_summary_cache: dict[str, Optional[str]] = {}
+
+def _get_conversation_buffer(user_id: str) -> deque:
+    buffer = _conversation_buffers.get(user_id)
+    if buffer is None:
+        buffer = deque(maxlen=CONVERSATION_BUFFER_LIMIT)
+        _conversation_buffers[user_id] = buffer
+    return buffer
+
+async def _load_latest_summary(user_id: str) -> Optional[str]:
+    if not supabase_available():
+        return None
+
+    try:
+        supabase = get_supabase_client()
+        response = (
+            supabase
+            .table(SUMMARY_TABLE_NAME)
+            .select("summary")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if response.data:
+            summary_value = response.data[0].get("summary")
+            _conversation_summary_cache[user_id] = summary_value
+            return summary_value
+    except Exception as exc:
+        logger.warning("Failed to load summary for %s: %s", user_id, exc)
+    return None
+
+async def _store_summary(user_id: str, summary: str, telegram_id: int | None = None) -> None:
+    if not supabase_available():
+        return
+    try:
+        supabase = get_supabase_client()
+        payload = {
+            "user_id": user_id,
+            "summary": summary,
+        }
+        if telegram_id is not None:
+            payload["telegram_id"] = telegram_id
+        supabase.table(SUMMARY_TABLE_NAME).insert(payload).execute()
+        _conversation_summary_cache[user_id] = summary
+    except Exception as exc:
+        logger.warning("Failed to store summary for %s: %s", user_id, exc)
+
+async def _prune_conversation_messages(user_id: str) -> None:
+    if not supabase_available():
+        return
+
+    try:
+        supabase = get_supabase_client()
+        response = (
+            supabase
+            .table("assistant_messages")
+            .select("id")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .range(MAX_STORED_MESSAGES_PER_USER, MAX_STORED_MESSAGES_PER_USER + 200)
+            .execute()
+        )
+
+        if response.data:
+            ids_to_delete = [row["id"] for row in response.data if row.get("id")]
+            if ids_to_delete:
+                supabase.table("assistant_messages").delete().in_("id", ids_to_delete).execute()
+    except Exception as exc:
+        logger.warning("Failed to prune conversation messages for %s: %s", user_id, exc)
+
+async def _generate_summary(user_id: str, history: list[dict], previous_summary: Optional[str]) -> Optional[str]:
+    try:
+        client = get_yandex_gpt_client()
+    except YandexGPTConfigurationError:
+        return None
+
+    summary_prompt_parts = [
+        "Ты — MISIX, персональный ассистент. Сформулируй краткое резюме разговора.",
+        "Используй не более 3 предложений. Укажи ключевые намерения пользователя и принятое ботом действие.",
+    ]
+    if previous_summary:
+        summary_prompt_parts.append("Вот резюме предыдущих разговоров:")
+        summary_prompt_parts.append(previous_summary)
+    summary_prompt_parts.append("Вот последние сообщения:")
+
+    conversation_text = []
+    for msg in history:
+        role = "Пользователь" if msg.get("role") == "user" else "Ассистент"
+        conversation_text.append(f"{role}: {msg.get('text', '')}")
+
+    summary_prompt_parts.append("\n".join(conversation_text))
+    summary_prompt_parts.append("Ответь только резюме, без списка и без обращений.")
+
+    summary_prompt = "\n\n".join(summary_prompt_parts)
+
+    try:
+        response = await client.chat([
+            {"role": "system", "text": "Ты помогаешь вести краткие резюме диалогов."},
+            {"role": "user", "text": summary_prompt},
+        ])
+        return response.strip()
+    except Exception as exc:
+        logger.warning("Failed to generate summary for %s: %s", user_id, exc)
+        return None
+
+
+async def _record_conversation_piece(
+    user_id: str,
+    role: str,
+    text: str,
+    *,
+    telegram_id: int | None,
+    attempt_summary: bool = False,
+) -> None:
+    buffer = _get_conversation_buffer(user_id)
+    buffer.append({"role": role, "text": text})
+
+    count = _conversation_message_counts.get(user_id, 0) + 1
+    # Cap count to avoid uncontrolled growth if summary fails repeatedly
+    _conversation_message_counts[user_id] = min(count, SUMMARY_TRIGGER_MESSAGES + CONVERSATION_BUFFER_LIMIT)
+
+    if not attempt_summary or _conversation_message_counts[user_id] < SUMMARY_TRIGGER_MESSAGES:
+        return
+
+    history_snapshot = list(buffer)
+    previous_summary = _conversation_summary_cache.get(user_id)
+    if previous_summary is None:
+        previous_summary = await _load_latest_summary(user_id)
+    summary = await _generate_summary(user_id, history_snapshot, previous_summary)
+    if not summary:
+        return
+
+    await _store_summary(user_id, summary, telegram_id)
+
+    # Keep only the last couple of exchanges in memory for continuation
+    trimmed = deque(history_snapshot[-2:], maxlen=CONVERSATION_BUFFER_LIMIT)
+    _conversation_buffers[user_id] = trimmed
+    _conversation_message_counts[user_id] = 0
+    await _prune_conversation_messages(user_id)
 
 BUTTON_HELP: Final = "Помощь"
 BUTTON_SLEEP_START: Final = "Я спать"
@@ -648,12 +798,41 @@ async def _process_user_text(message, user_id: str, text: str, *, telegram_id: i
             await process_and_save_structured_data(message, user_id, text, telegram_id=telegram_id)
         except Exception as data_error:  # noqa: BLE001
             logger.error("Data saving also failed: %s", data_error)
+
+        await _record_conversation_piece(
+            user_id,
+            "user",
+            text,
+            telegram_id=telegram_id,
+        )
+        if fallback:
+            await _record_conversation_piece(
+                user_id,
+                "assistant",
+                fallback,
+                telegram_id=telegram_id,
+                attempt_summary=True,
+            )
         return
 
     try:
         await save_conversation_to_db(user_id, text, ai_response, telegram_id=telegram_id, session=session)
     except Exception as conv_error:  # noqa: BLE001
         logger.error("Failed to save conversation: %s", conv_error)
+
+    await _record_conversation_piece(
+        user_id,
+        "user",
+        text,
+        telegram_id=telegram_id,
+    )
+    await _record_conversation_piece(
+        user_id,
+        "assistant",
+        ai_response,
+        telegram_id=telegram_id,
+        attempt_summary=True,
+    )
 
 
 logger = logging.getLogger(__name__)
@@ -1218,41 +1397,43 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def get_conversation_history(user_id: str, limit: int = 20) -> list[dict]:
     """Get recent conversation history for a user."""
-    if not supabase_available():
-        return []
-    
-    try:
-        supabase = get_supabase_client()
-        
-        # Get last N messages from conversation history
-        response = supabase.table("assistant_messages")\
-            .select("role", "content", "created_at")\
-            .eq("user_id", user_id)\
-            .order("created_at", desc=True)\
-            .limit(limit)\
-            .execute()
-        
-        if response.data:
-            # Reverse to get chronological order (oldest first)
-            messages = response.data[::-1]
-            
-            # Convert to format expected by AI
-            history = []
-            for msg in messages:
-                history.append({
-                    "role": msg["role"],  # "user" or "assistant"
-                    "text": msg["content"]
-                })
-            
-            logger.info(f"Retrieved {len(history)} messages from conversation history for user {user_id}")
-            return history
-        else:
-            logger.info(f"No conversation history found for user {user_id}")
-            return []
-            
-    except Exception as e:
-        logger.warning(f"Failed to get conversation history for user {user_id}: {e}")
-        return []
+    buffer = _get_conversation_buffer(user_id)
+
+    if not buffer and supabase_available():
+        try:
+            supabase = get_supabase_client()
+            response = (
+                supabase
+                .table("assistant_messages")
+                .select("role", "content")
+                .eq("user_id", user_id)
+                .order("created_at", desc=True)
+                .limit(CONVERSATION_BUFFER_LIMIT)
+                .execute()
+            )
+            if response.data:
+                for msg in reversed(response.data):
+                    buffer.append({"role": msg["role"], "text": msg["content"]})
+                _conversation_message_counts[user_id] = len(buffer)
+        except Exception as exc:
+            logger.warning("Failed to hydrate conversation buffer for %s: %s", user_id, exc)
+
+    result: list[dict] = []
+    summary_text = _conversation_summary_cache.get(user_id)
+    if summary_text is None:
+        summary_text = await _load_latest_summary(user_id)
+
+    if summary_text:
+        result.append({
+            "role": "system",
+            "text": f"Краткое резюме предыдущих разговоров: {summary_text}",
+        })
+
+    if buffer:
+        history_slice = list(buffer)[-limit:]
+        result.extend(history_slice)
+
+    return result
 async def process_transcribed_text(update: Update, context: ContextTypes.DEFAULT_TYPE, transcribed_text: str) -> None:
     """Process transcribed text from voice messages as regular text."""
     message = update.message

@@ -244,6 +244,20 @@ create table if not exists assistant_messages (
 create index if not exists idx_assistant_messages_session on assistant_messages (session_id);
 create index if not exists idx_assistant_messages_user on assistant_messages (user_id);
 
+-- AI Assistant conversation summaries
+create table if not exists assistant_conversation_summaries (
+    id uuid primary key default uuid_generate_v4(),
+    user_id uuid not null,
+    telegram_id bigint,
+    summary text not null,
+    created_at timestamptz not null default now(),
+    constraint assistant_conversation_summaries_user_fk foreign key (user_id)
+        references users (id) on delete cascade
+);
+
+create index if not exists idx_assistant_conversation_summaries_user on assistant_conversation_summaries (user_id);
+create index if not exists idx_assistant_conversation_summaries_created on assistant_conversation_summaries (created_at desc);
+
 -- File attachments
 create table if not exists attachments (
     id uuid primary key default uuid_generate_v4(),

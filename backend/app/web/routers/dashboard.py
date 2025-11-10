@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from collections import Counter
 from datetime import datetime
@@ -10,6 +11,7 @@ from fastapi import APIRouter, HTTPException
 from app.shared.supabase import get_supabase_client
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/dashboard/summary")
@@ -26,17 +28,35 @@ async def get_dashboard_summary(user_id: str):
     supabase = get_supabase_client()
 
     def _fetch_limited(table: str, *, select: str = "*", limit: int = 5, order: str | None = None, desc: bool = True):
-        query = supabase.table(table).select(select, count="exact").eq("user_id", user_id)
-        if order:
-            query = query.order(order, desc=desc)
-        if limit:
-            query = query.limit(limit)
-        result = query.execute()
-        items = result.data or []
-        total = getattr(result, "count", None)
-        if total is None:
-            total = len(items)
-        return items, total
+        try:
+            query = supabase.table(table).select(select, count="exact").eq("user_id", user_id)
+            if order:
+                query = query.order(order, desc=desc)
+            if limit:
+                query = query.limit(limit)
+            result = query.execute()
+            items = result.data or []
+            total = getattr(result, "count", None)
+            if total is None:
+                total = len(items)
+            return items, total
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to fetch %s for dashboard: %s", table, exc)
+            return [], 0
+
+    def _safe_select_all(table: str, columns: str = "*") -> list[dict]:
+        try:
+            response = (
+                supabase
+                .table(table)
+                .select(columns)
+                .eq("user_id", user_id)
+                .execute()
+            )
+            return response.data or []
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to select from %s for dashboard: %s", table, exc)
+            return []
 
     try:
         tasks, tasks_total = _fetch_limited("tasks", order="created_at", limit=5)
@@ -51,16 +71,16 @@ async def get_dashboard_summary(user_id: str):
         messages, _ = _fetch_limited("assistant_messages", order="created_at", desc=True, limit=20)
 
         # Task stats
-        task_status_resp = supabase.table("tasks").select("status").eq("user_id", user_id).execute()
-        task_statuses = Counter(item.get("status", "new") for item in (task_status_resp.data or []))
+        task_status_rows = _safe_select_all("tasks", "status")
+        task_statuses = Counter(item.get("status", "new") for item in task_status_rows)
         task_open = task_statuses.get("new", 0) + task_statuses.get("in_progress", 0) + task_statuses.get("waiting", 0)
         task_completed = task_statuses.get("completed", 0)
 
         # Finance summaries
-        finance_all = supabase.table("finance_transactions").select("amount,type").eq("user_id", user_id).execute()
+        finance_all = _safe_select_all("finance_transactions", "amount,type")
         total_income = 0.0
         total_expense = 0.0
-        for item in finance_all.data or []:
+        for item in finance_all:
             amount = float(item.get("amount") or 0)
             if item.get("type") == "income":
                 total_income += amount
@@ -69,19 +89,19 @@ async def get_dashboard_summary(user_id: str):
         finance_balance = total_income - total_expense
 
         # Debt summaries
-        debt_all = supabase.table("finance_debts").select("amount,status").eq("user_id", user_id).execute()
+        debt_all = _safe_select_all("finance_debts", "amount,status")
         open_debt_amount = 0.0
         open_debt_count = 0
-        for item in debt_all.data or []:
+        for item in debt_all:
             if item.get("status") in {"pending", "overdue"}:
                 open_debt_count += 1
                 open_debt_amount += float(item.get("amount") or 0)
 
         # Reminder summaries
-        reminder_all = supabase.table("reminders").select("status,reminder_time").eq("user_id", user_id).execute()
+        reminder_all = _safe_select_all("reminders", "status,reminder_time")
         scheduled_count = 0
         next_reminder_time: datetime | None = None
-        for item in reminder_all.data or []:
+        for item in reminder_all:
             if item.get("status") == "scheduled":
                 scheduled_count += 1
                 raw_time = item.get("reminder_time")

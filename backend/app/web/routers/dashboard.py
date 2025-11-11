@@ -68,6 +68,14 @@ async def get_dashboard_summary(user_id: str):
         sleep_sessions, _ = _fetch_limited("sleep_sessions", order="created_at", desc=True, limit=5)
         health_metrics, _ = _fetch_limited("health_metrics", order="recorded_at", desc=True, limit=50)
         personal_entries, personal_total = _fetch_limited("personal_data_entries", order="created_at", desc=True, limit=5)
+        personal_categories_raw = _safe_select_all(
+            "personal_data_categories",
+            "id,name,description,color,icon,is_confidential,sort_order"
+        )
+        personal_categories = sorted(
+            personal_categories_raw,
+            key=lambda row: ((row.get("sort_order") or 0), (row.get("name") or ""))
+        )
         messages, _ = _fetch_limited("assistant_messages", order="created_at", desc=True, limit=20)
 
         finance_categories_raw = _safe_select_all(
@@ -192,6 +200,7 @@ async def get_dashboard_summary(user_id: str):
             "sleepSessions": sleep_sessions,
             "healthMetrics": health_metrics,
             "personalEntries": personal_entries,
+            "personalCategories": personal_categories,
             "messages": messages,
             "financeCategories": finance_categories,
             "financeAccounts": finance_accounts,

@@ -21,33 +21,39 @@ const PersonalCategoryList = ({ categories, onCreate, onEdit, onDelete }: Person
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex justify-end">
         <Button variant="secondary" onClick={onCreate}>
           Новая категория
         </Button>
       </div>
       {categories.map((category) => (
-        <div key={category.id} className="rounded-lg border border-border bg-surface p-4 shadow-card">
+        <div
+          key={category.id}
+          className="rounded-2xl border border-borderStrong bg-surface/70 p-5 shadow-card backdrop-blur-xl transition-transform duration-300 ease-out-soft hover:-translate-y-1 hover:shadow-glow"
+        >
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <div className="flex items-center gap-2">
-                {category.icon && <span className="text-lg">{category.icon}</span>}
-                <h3 className="text-base font-semibold text-text">{category.name}</h3>
+              <div className="flex items-center gap-3">
+                {category.icon && <span className="text-xl">{category.icon}</span>}
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-textMuted">Категория</p>
+                  <h3 className="text-lg font-semibold text-text">{category.name}</h3>
+                </div>
               </div>
-              {category.description && <p className="text-sm text-textMuted">{category.description}</p>}
+              {category.description && <p className="mt-2 text-sm text-textSecondary">{category.description}</p>}
               {category.color && (
                 <span
-                  className="mt-2 inline-flex items-center rounded-full border border-border px-3 py-1 text-xs text-textMuted"
+                  className="mt-3 inline-flex items-center rounded-full border border-borderStrong px-3 py-1 text-xs text-textMuted"
                   style={{ backgroundColor: category.color }}
                 >
                   {category.color}
                 </span>
               )}
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-3">
               {category.is_confidential && (
-                <span className="rounded-full border border-border px-3 py-1 text-xs font-semibold text-primary">
+                <span className="rounded-full border border-primary bg-primaryMuted/30 px-3 py-1 text-xs font-semibold text-primary">
                   Конфиденциально
                 </span>
               )}

@@ -14,14 +14,20 @@ const FinanceCategoryList = ({ categories, onEdit, onDelete }: FinanceCategoryLi
   }
 
   return (
-    <div className="grid gap-3 md:grid-cols-2">
+    <div className="grid gap-4 md:grid-cols-2">
       {categories.map((category) => (
-        <div key={category.id} className="rounded-lg border border-border bg-surface p-4 shadow-card">
-          <div className="flex items-start justify-between gap-2">
-            <h3 className="text-base font-semibold text-text">{category.name}</h3>
-            {category.budget != null && <span className="text-sm text-textMuted">Бюджет: {category.budget}</span>}
+        <div
+          key={category.id}
+          className="rounded-2xl border border-borderStrong bg-surface/70 p-5 shadow-card backdrop-blur-xl transition-transform duration-300 ease-out-soft hover:-translate-y-1 hover:shadow-glow"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-textMuted">Категория</p>
+              <h3 className="text-lg font-semibold text-text">{category.name}</h3>
+            </div>
+            {category.budget != null && <span className="text-sm text-textSecondary">Бюджет: {category.budget}</span>}
           </div>
-          <div className="mt-2 flex gap-2">
+          <div className="mt-4 flex gap-3">
             <Button variant="secondary" onClick={() => onEdit(category.id)}>
               Изменить
             </Button>

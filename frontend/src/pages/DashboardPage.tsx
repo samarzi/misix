@@ -10,6 +10,8 @@ import PinLock from '../features/pin/PinLock';
 import AnalyticsDetail from '../features/analytics/AnalyticsDetail';
 import TasksDetail from '../features/tasks/TasksDetail';
 import NotesDetail from '../features/notes/NotesDetail';
+import TaskForm, { type TaskFormValues } from '../features/tasks/TaskForm';
+import NoteForm, { type NoteFormValues } from '../features/notes/NoteForm';
 import FinancesDetail from '../features/finances/FinancesDetail';
 import DebtsDetail from '../features/debts/DebtsDetail';
 import RemindersDetail from '../features/reminders/RemindersDetail';
@@ -45,6 +47,12 @@ import {
   useCreatePersonalEntry,
   useUpdatePersonalEntry,
   useDeletePersonalEntry,
+  useCreateTask,
+  useUpdateTask,
+  useDeleteTask,
+  useCreateNote,
+  useUpdateNote,
+  useDeleteNote,
 } from '../api/hooks';
 import { useUiStore } from '../stores/uiStore';
 import { resolveUserId } from '../utils/user';
@@ -66,7 +74,12 @@ import type {
   UpdatePersonalCategoryPayload,
   CreatePersonalEntryPayload,
   UpdatePersonalEntryPayload,
+  CreateTaskPayload,
+  UpdateTaskPayload,
+  CreateNotePayload,
+  UpdateNotePayload,
 } from '../api/client';
+import type { TaskPriority, TaskStatus } from '../api/types';
 
 const DashboardPage = () => {
   const userId = useMemo(() => resolveUserId(), []);
@@ -78,6 +91,29 @@ const DashboardPage = () => {
   } = useDashboardQuery(userId);
 
   const [modalError, setModalError] = useState<string | null>(null);
+  const [taskStatusFilter, setTaskStatusFilter] = useState<TaskStatus | 'all'>('all');
+  const [taskPriorityFilter, setTaskPriorityFilter] = useState<TaskPriority | 'all'>('all');
+  const [noteSearch, setNoteSearch] = useState('');
+
+  const filteredTasks = useMemo(() => {
+    if (!data) return [];
+    return data.tasks.filter((task) => {
+      const matchesStatus = taskStatusFilter === 'all' || task.status === taskStatusFilter;
+      const matchesPriority = taskPriorityFilter === 'all' || task.priority === taskPriorityFilter;
+      return matchesStatus && matchesPriority;
+    });
+  }, [data, taskStatusFilter, taskPriorityFilter]);
+
+  const filteredNotes = useMemo(() => {
+    if (!data) return [];
+    const query = noteSearch.trim().toLowerCase();
+    if (!query) return data.notes;
+    return data.notes.filter((note) => {
+      const title = note.title?.toLowerCase() ?? '';
+      const content = note.content.toLowerCase();
+      return title.includes(query) || content.includes(query);
+    });
+  }, [data, noteSearch]);
 
   const {
     view,
@@ -93,6 +129,7 @@ const DashboardPage = () => {
     closeModal,
     pin,
     setPinState,
+    showToast,
   } = useUiStore();
 
   useEffect(() => {
@@ -191,6 +228,12 @@ const DashboardPage = () => {
   const createPersonalEntryMutation = useCreatePersonalEntry(userId);
   const updatePersonalEntryMutation = useUpdatePersonalEntry(userId);
   const deletePersonalEntryMutation = useDeletePersonalEntry(userId);
+  const createTaskMutation = useCreateTask(userId);
+  const updateTaskMutation = useUpdateTask(userId);
+  const deleteTaskMutation = useDeleteTask(userId);
+  const createNoteMutation = useCreateNote(userId);
+  const updateNoteMutation = useUpdateNote(userId);
+  const deleteNoteMutation = useDeleteNote(userId);
 
   const handleCreateTransaction = async (values: Parameters<typeof FinanceTransactionForm>[0]['onSubmit'] extends (value: infer V) => any ? V : never) => {
     setModalError(null);
@@ -205,6 +248,7 @@ const DashboardPage = () => {
       type: values.type,
     };
     await createTransactionMutation.mutateAsync(payload);
+    showToast('Операция сохранена', 'success');
     closeModal();
   };
 
@@ -221,12 +265,14 @@ const DashboardPage = () => {
       type: values.type,
     };
     await updateTransactionMutation.mutateAsync(payload);
+    showToast('Операция обновлена', 'success');
     closeModal();
   };
 
   const handleDeleteTransaction = async (transactionId: string) => {
     setModalError(null);
     await deleteTransactionMutation.mutateAsync(transactionId);
+    showToast('Операция удалена', 'success');
     closeModal();
   };
 
@@ -239,6 +285,7 @@ const DashboardPage = () => {
       institution: values.institution,
     };
     await createAccountMutation.mutateAsync(payload);
+    showToast('Счёт создан', 'success');
     closeModal();
   };
 
@@ -252,12 +299,14 @@ const DashboardPage = () => {
       institution: values.institution,
     };
     await updateAccountMutation.mutateAsync(payload);
+    showToast('Счёт обновлён', 'success');
     closeModal();
   };
 
   const handleDeleteAccount = async (accountId: string) => {
     setModalError(null);
     await deleteAccountMutation.mutateAsync(accountId);
+    showToast('Счёт удалён', 'success');
     closeModal();
   };
 
@@ -268,6 +317,7 @@ const DashboardPage = () => {
       budget: values.budget ?? undefined,
     };
     await createCategoryMutation.mutateAsync(payload);
+    showToast('Категория создана', 'success');
     closeModal();
   };
 
@@ -279,12 +329,14 @@ const DashboardPage = () => {
       budget: values.budget ?? undefined,
     };
     await updateCategoryMutation.mutateAsync(payload);
+    showToast('Категория обновлена', 'success');
     closeModal();
   };
 
   const handleDeleteCategory = async (categoryId: string) => {
     setModalError(null);
     await deleteCategoryMutation.mutateAsync(categoryId);
+    showToast('Категория удалена', 'success');
     closeModal();
   };
 
@@ -297,6 +349,7 @@ const DashboardPage = () => {
       category_id: values.category_id,
     };
     await createRuleMutation.mutateAsync(payload);
+    showToast('Правило создано', 'success');
     closeModal();
   };
 
@@ -310,12 +363,14 @@ const DashboardPage = () => {
       category_id: values.category_id,
     };
     await updateRuleMutation.mutateAsync(payload);
+    showToast('Правило обновлено', 'success');
     closeModal();
   };
 
   const handleDeleteRule = async (ruleId: string) => {
     setModalError(null);
     await deleteRuleMutation.mutateAsync(ruleId);
+    showToast('Правило удалено', 'success');
     closeModal();
   };
 
@@ -329,6 +384,7 @@ const DashboardPage = () => {
       recurrence_rule: values.recurrence_rule,
     };
     await createReminderMutation.mutateAsync(payload);
+    showToast('Напоминание сохранено', 'success');
     closeModal();
   };
 
@@ -343,12 +399,14 @@ const DashboardPage = () => {
       recurrence_rule: values.recurrence_rule,
     };
     await updateReminderMutation.mutateAsync(payload);
+    showToast('Напоминание обновлено', 'success');
     closeModal();
   };
 
   const handleCancelReminder = async (reminderId: string) => {
     setModalError(null);
     await cancelReminderMutation.mutateAsync(reminderId);
+    showToast('Напоминание отменено', 'success');
     closeModal();
   };
 
@@ -362,6 +420,7 @@ const DashboardPage = () => {
       is_confidential: values.is_confidential ?? false,
     };
     await createPersonalCategoryMutation.mutateAsync(payload);
+    showToast('Категория сохранена', 'success');
     closeModal();
   };
 
@@ -376,12 +435,14 @@ const DashboardPage = () => {
       is_confidential: values.is_confidential ?? false,
     };
     await updatePersonalCategoryMutation.mutateAsync(payload);
+    showToast('Категория обновлена', 'success');
     closeModal();
   };
 
   const handleDeletePersonalCategory = async (categoryId: string) => {
     setModalError(null);
     await deletePersonalCategoryMutation.mutateAsync(categoryId);
+    showToast('Категория удалена', 'success');
     closeModal();
   };
 
@@ -393,6 +454,7 @@ const DashboardPage = () => {
       tags: values.tags ?? null,
     };
     await createPersonalEntryMutation.mutateAsync(payload);
+    showToast('Запись сохранена', 'success');
     closeModal();
   };
 
@@ -405,17 +467,88 @@ const DashboardPage = () => {
       tags: values.tags ?? null,
     };
     await updatePersonalEntryMutation.mutateAsync(payload);
+    showToast('Запись обновлена', 'success');
     closeModal();
   };
 
   const handleDeletePersonalEntry = async (entryId: string) => {
     setModalError(null);
     await deletePersonalEntryMutation.mutateAsync(entryId);
+    showToast('Запись удалена', 'success');
+    closeModal();
+  };
+
+  const handleCreateTask = async (values: TaskFormValues) => {
+    setModalError(null);
+    const payload: CreateTaskPayload = {
+      title: values.title,
+      description: values.description ?? undefined,
+      priority: values.priority,
+      status: values.status,
+      deadline: values.deadline ?? undefined,
+    };
+    await createTaskMutation.mutateAsync(payload);
+    showToast('Задача создана', 'success');
+    closeModal();
+  };
+
+  const handleUpdateTask = async (taskId: string, values: TaskFormValues) => {
+    setModalError(null);
+    const payload: UpdateTaskPayload = {
+      id: taskId,
+      title: values.title,
+      description: values.description ?? undefined,
+      priority: values.priority,
+      status: values.status,
+      deadline: values.deadline ?? undefined,
+    };
+    await updateTaskMutation.mutateAsync(payload);
+    showToast('Задача обновлена', 'success');
+    closeModal();
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    setModalError(null);
+    await deleteTaskMutation.mutateAsync(taskId);
+    showToast('Задача удалена', 'success');
+    closeModal();
+  };
+
+  const handleCreateNote = async (values: NoteFormValues) => {
+    setModalError(null);
+    const payload: CreateNotePayload = {
+      title: values.title ?? undefined,
+      content: values.content,
+      content_format: values.content_format ?? 'markdown',
+    };
+    await createNoteMutation.mutateAsync(payload);
+    showToast('Заметка создана', 'success');
+    closeModal();
+  };
+
+  const handleUpdateNote = async (noteId: string, values: NoteFormValues) => {
+    setModalError(null);
+    const payload: UpdateNotePayload = {
+      id: noteId,
+      title: values.title ?? undefined,
+      content: values.content,
+      content_format: values.content_format ?? 'markdown',
+    };
+    await updateNoteMutation.mutateAsync(payload);
+    showToast('Заметка обновлена', 'success');
+    closeModal();
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    setModalError(null);
+    await deleteNoteMutation.mutateAsync(noteId);
+    showToast('Заметка удалена', 'success');
     closeModal();
   };
 
   const handleMutationError = (errorMessage: string) => {
     setModalError(errorMessage);
+    showToast(errorMessage, 'error');
   };
 
   const renderModal = () => {
@@ -837,6 +970,122 @@ const DashboardPage = () => {
           </Modal>
         );
       }
+      case 'task': {
+        const task = modal.payload?.entityId
+          ? data?.tasks.find((item) => item.id === modal.payload?.entityId)
+          : undefined;
+        const isEdit = Boolean(task);
+        return (
+          <Modal title={isEdit ? 'Редактировать задачу' : 'Создать задачу'} onClose={closeModal} actions={null}>
+            {modalError && <p className="text-sm text-danger">{modalError}</p>}
+            <TaskForm
+              defaultValues={task}
+              onCancel={closeModal}
+              onSubmit={async (values) => {
+                try {
+                  if (task) {
+                    await handleUpdateTask(task.id, values);
+                  } else {
+                    await handleCreateTask(values);
+                  }
+                } catch (mutationError) {
+                  console.error(mutationError);
+                  handleMutationError('Не удалось сохранить задачу');
+                }
+              }}
+              submitLabel={isEdit ? 'Сохранить изменения' : 'Создать'}
+            />
+          </Modal>
+        );
+      }
+      case 'task-delete': {
+        const task = modal.payload?.entityId
+          ? data?.tasks.find((item) => item.id === modal.payload?.entityId)
+          : undefined;
+        if (!task) return null;
+        return (
+          <Modal title="Удалить задачу" onClose={closeModal}>
+            <p className="text-sm text-text">Удалить задачу «{task.title}»?</p>
+            {modalError && <p className="text-sm text-danger">{modalError}</p>}
+            <div className="mt-6 flex justify-end gap-3">
+              <Button variant="secondary" onClick={closeModal}>
+                Отмена
+              </Button>
+              <Button
+                variant="danger"
+                onClick={async () => {
+                  try {
+                    await handleDeleteTask(task.id);
+                  } catch (mutationError) {
+                    console.error(mutationError);
+                    handleMutationError('Не удалось удалить задачу');
+                  }
+                }}
+              >
+                Удалить
+              </Button>
+            </div>
+          </Modal>
+        );
+      }
+      case 'note': {
+        const note = modal.payload?.entityId
+          ? data?.notes.find((item) => item.id === modal.payload?.entityId)
+          : undefined;
+        const isEdit = Boolean(note);
+        return (
+          <Modal title={isEdit ? 'Редактировать заметку' : 'Создать заметку'} onClose={closeModal} actions={null}>
+            {modalError && <p className="text-sm text-danger">{modalError}</p>}
+            <NoteForm
+              defaultValues={note}
+              onCancel={closeModal}
+              onSubmit={async (values) => {
+                try {
+                  if (note) {
+                    await handleUpdateNote(note.id, values);
+                  } else {
+                    await handleCreateNote(values);
+                  }
+                } catch (mutationError) {
+                  console.error(mutationError);
+                  handleMutationError('Не удалось сохранить заметку');
+                }
+              }}
+              submitLabel={isEdit ? 'Сохранить изменения' : 'Создать'}
+            />
+          </Modal>
+        );
+      }
+      case 'note-delete': {
+        const note = modal.payload?.entityId
+          ? data?.notes.find((item) => item.id === modal.payload?.entityId)
+          : undefined;
+        if (!note) return null;
+        return (
+          <Modal title="Удалить заметку" onClose={closeModal}>
+            <p className="text-sm text-text">Удалить заметку «{note.title ?? 'Без названия'}»?</p>
+            {modalError && <p className="text-sm text-danger">{modalError}</p>}
+            <div className="mt-6 flex justify-end gap-3">
+              <Button variant="secondary" onClick={closeModal}>
+                Отмена
+              </Button>
+              <Button
+                variant="danger"
+                onClick={async () => {
+                  try {
+                    await handleDeleteNote(note.id);
+                  } catch (mutationError) {
+                    console.error(mutationError);
+                    handleMutationError('Не удалось удалить заметку');
+                  }
+                }}
+              >
+                Удалить
+              </Button>
+            </div>
+          </Modal>
+        );
+      }
       default:
         return null;
     }
@@ -855,12 +1104,35 @@ const DashboardPage = () => {
             finances={data.finances}
             accounts={data.financeAccounts}
             categories={data.financeCategories}
+            statistics={data.statistics}
           />
         );
       case 'tasks':
-        return <TasksDetail tasks={data.tasks} tone={tone as ToneStyle} />;
+        return (
+          <TasksDetail
+            tasks={filteredTasks}
+            tone={tone as ToneStyle}
+            onCreate={() => openModal('task')}
+            onEdit={(id) => openModal('task', { entityId: id })}
+            onDelete={(id) => openModal('task-delete', { entityId: id })}
+            statusFilter={taskStatusFilter}
+            priorityFilter={taskPriorityFilter}
+            onStatusFilterChange={setTaskStatusFilter}
+            onPriorityFilterChange={setTaskPriorityFilter}
+          />
+        );
       case 'notes':
-        return <NotesDetail notes={data.notes} tone={tone as ToneStyle} />;
+        return (
+          <NotesDetail
+            notes={filteredNotes}
+            tone={tone as ToneStyle}
+            onCreate={() => openModal('note')}
+            onEdit={(id) => openModal('note', { entityId: id })}
+            onDelete={(id) => openModal('note-delete', { entityId: id })}
+            searchValue={noteSearch}
+            onSearchChange={setNoteSearch}
+          />
+        );
       case 'finances':
         return (
           <FinancesDetail

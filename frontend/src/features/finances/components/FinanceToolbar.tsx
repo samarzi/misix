@@ -19,23 +19,26 @@ const tabs: { key: FinanceTabKey; label: string }[] = [
 
 const FinanceToolbar = ({ activeTab, onTabChange, onAddTransaction, onAddAccount, onAddCategory, onAddRule }: FinanceToolbarProps) => {
   return (
-    <div className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-4 shadow-card">
-      <div className="flex flex-wrap gap-2">
+    <div className="flex flex-col gap-5 rounded-2xl border border-borderStrong bg-surface/70 p-6 shadow-card backdrop-blur-xl">
+      <div className="flex flex-wrap gap-3">
         {tabs.map((tab) => (
           <button
             key={tab.key}
             type="button"
             onClick={() => onTabChange(tab.key)}
-            className={`rounded-full border px-4 py-2 text-sm font-medium ${
-              activeTab === tab.key ? 'border-primary bg-primaryMuted text-primary' : 'border-border bg-surfaceAlt text-text'
+            className={`group relative overflow-hidden rounded-full border px-4 py-2 text-sm font-medium transition-all duration-350 ease-out-soft ${
+              activeTab === tab.key
+                ? 'border-primary bg-primaryMuted text-primary shadow-glow'
+                : 'border-borderStrong bg-surfaceGlass text-textSecondary hover:text-text'
             }`}
           >
+            <span className="pointer-events-none absolute inset-0 translate-x-[-120%] bg-[linear-gradient(120deg,transparent,rgba(255,255,255,0.35),transparent)] transition-transform duration-500 group-hover:translate-x-[120%]" aria-hidden="true" />
             {tab.label}
           </button>
         ))}
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-3">
         {activeTab === 'overview' && (
           <Button onClick={onAddTransaction}>Добавить операцию</Button>
         )}

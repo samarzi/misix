@@ -6,9 +6,10 @@ interface EmptyStateProps {
 
 const EmptyState = ({ title, description, action }: EmptyStateProps) => {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-surfaceAlt p-6 text-center text-textMuted">
-      <h3 className="text-lg font-semibold text-text">{title}</h3>
-      <p className="text-sm">{description}</p>
+    <div className="group relative flex flex-col items-center justify-center gap-4 overflow-hidden rounded-2xl border border-dashed border-borderStrong bg-surfaceAlt/60 px-6 py-10 text-center text-textSecondary shadow-card backdrop-blur-xl">
+      <span className="pointer-events-none absolute inset-0 border border-transparent transition-colors duration-500 ease-out-soft group-hover:border-primaryGlow" aria-hidden="true" />
+      <h3 className="text-xl font-semibold text-text">{title}</h3>
+      <p className="max-w-md text-sm text-textMuted">{description}</p>
       {action && <div className="mt-2">{action}</div>}
     </div>
   );

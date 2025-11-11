@@ -16,12 +16,15 @@
     margin: 0;
     min-height: 100vh;
     background-color: theme('colors.background');
+    background-image: theme('backgroundImage.radial-overlay');
+    background-repeat: no-repeat;
+    background-size: cover;
   }
 
   #root {
     min-height: 100vh;
     color: theme('colors.text');
-    background-color: theme('colors.background');
+    background-color: transparent;
   }
 
   button:focus-visible,

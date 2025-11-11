@@ -10,17 +10,18 @@ interface SummaryCardProps {
 
 const SummaryCard = ({ icon, title, primary, secondary, action }: SummaryCardProps) => {
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border bg-surfaceAlt p-4 shadow-card">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primaryMuted text-xl">
+    <div className="group relative overflow-hidden rounded-2xl border border-borderStrong bg-surfaceAlt/70 p-5 shadow-card backdrop-blur-xl transition-transform duration-350 ease-out-soft hover:-translate-y-1 hover:shadow-glow">
+      <span className="pointer-events-none absolute inset-0 border border-transparent transition-all duration-500 ease-out-soft group-hover:border-primaryGlow" aria-hidden="true" />
+      <div className="relative flex items-start gap-4">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primaryMuted text-2xl text-primary">
           {icon}
         </div>
         <div className="flex-1">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-base font-semibold text-text">{title}</h3>
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-base font-semibold text-text md:text-lg">{title}</h3>
             {action}
           </div>
-          <p className="text-lg font-semibold text-text">{primary}</p>
+          <p className="mt-1 text-2xl font-semibold text-text md:text-3xl">{primary}</p>
           <p className="text-sm text-textMuted">{secondary}</p>
         </div>
       </div>

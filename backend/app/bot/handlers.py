@@ -167,7 +167,7 @@ async def _generate_summary(user_id: str, history: list[dict], previous_summary:
 
     try:
         response = await client.chat([
-            {"role": "system", "text": "Ты помогаешь вести краткие резюме диалогов."},
+            {"role": "system", "text": "Ты помогаешь вести краткие резюмы диалогов."},
             {"role": "user", "text": summary_prompt},
         ])
         return response.strip()
@@ -210,6 +210,7 @@ async def _record_conversation_piece(
     _conversation_message_counts[user_id] = 0
     await _prune_conversation_messages(user_id)
 
+
 BUTTON_HELP: Final = "Помощь"
 BUTTON_SLEEP_START: Final = "Я спать"
 BUTTON_SLEEP_PAUSE: Final = "Пауза"
@@ -225,6 +226,9 @@ SLEEP_PAUSE_PHRASES: Final = {BUTTON_SLEEP_PAUSE.lower(), "пауза"}
 SLEEP_RESUME_PHRASES: Final = {BUTTON_SLEEP_RESUME.lower(), "продолжить", "продолжай"}
 
 PERSONA_CALLBACK_PREFIX: Final = "persona:"
+
+CONFIRMATION_ACCEPT_WORDS: Final = {"подтверждаю", "да", "ок", "верно", "хорошо", "согласен"}
+CONFIRMATION_CANCEL_WORDS: Final = {"отмена", "отмени", "нет", "не надо", "откажись", "останови"}
 
 
 def _now_utc() -> datetime:
@@ -670,7 +674,7 @@ async def _stop_sleep_session(session: dict, *, auto=False) -> Optional[dict]:
     return await _update_sleep_session(session["id"], updates)
 
 
-async def _process_user_text(message, user_id: str, text: str, *, telegram_id: int | None, bot) -> None:
+async def _process_user_text(message, user_id: str, text: str, *, telegram_id: int | None, bot, context: ContextTypes.DEFAULT_TYPE | None) -> None:
     text = text.strip()
     if not text:
         return
@@ -686,6 +690,35 @@ async def _process_user_text(message, user_id: str, text: str, *, telegram_id: i
         logger.warning("Failed to sync sleep session: %s", exc)
         session = None
         notifications = []
+
+    try:
+        if context is not None:
+            pending_state = context.chat_data.get('pending_confirmation')
+            if pending_state:
+                pending_intent = pending_state.get('pending_intent')
+                payload = pending_state.get('payload', {})
+
+                if text_lower in CONFIRMATION_ACCEPT_WORDS:
+                    if pending_intent == 'finance_transaction':
+                        saved = await _commit_pending_finance_transaction(payload)
+                        emoji = "💰" if saved.get('type') == 'income' else "💸"
+                        amount = saved.get('amount', 0)
+                        category = payload.get('category_name', 'Без категории')
+                        await message.reply_text(
+                            f"{emoji} Транзакция сохранена!\n"
+                            f"Сумма: {amount}\n"
+                            f"Категория: {category}"
+                        )
+                        context.chat_data.pop('pending_confirmation', None)
+                        return
+
+                if text_lower in CONFIRMATION_CANCEL_WORDS:
+                    await message.reply_text("❎ Отменено. Если передумаешь — расскажи детали ещё раз.")
+                    context.chat_data.pop('pending_confirmation', None)
+                    return
+
+    except Exception as exc:
+        logger.warning("Sleep session check failed: %s", exc)
 
     keyboard = _current_keyboard(session)
     for note in notifications:
@@ -1488,6 +1521,8 @@ async def get_conversation_history(user_id: str, limit: int = 20) -> list[dict]:
         result.extend(history_slice)
 
     return result
+
+
 async def process_transcribed_text(update: Update, context: ContextTypes.DEFAULT_TYPE, transcribed_text: str) -> None:
     """Process transcribed text from voice messages as regular text."""
     message = update.message
@@ -2671,46 +2706,86 @@ async def execute_intent(
     *,
     raw_text: str | None = None,
     telegram_id: int | None = None,
+    context: ContextTypes.DEFAULT_TYPE | None = None,
 ):
     """Execute the determined intent for MISIX."""
     supabase = get_supabase_client()
 
     try:
         if intent == 'finance_transaction':
-            # Handle finance transaction
             text_for_processing = raw_text or description
-            await save_finance_data(user_id, text_for_processing)
+            amount_value, direction_value, category_name = _parse_transaction_details(text_for_processing or "")
 
-            emoji = "💰" if 'income' in (raw_text or '').lower() else "💸"
-            await message.reply_text(
-                f"{emoji} Транзакция сохранена!\n"
-                f"{text_for_processing}"
-            )
+            if amount_value is None:
+                await message.reply_text("❓ Не слышу сумму. Уточни, сколько именно?")
+                return
+
+            if direction_value is None:
+                await message.reply_text("💬 Это доход или расход? Напиши 'доход' или 'расход'.")
+                return
+
+            human_category = category_name or "Без категории"
+            summary_lines = [
+                "📋 Проверь, всё ли верно:",
+                f"Сумма: {amount_value}",
+                f"Тип: {'Доход' if direction_value == 'income' else 'Расход'}",
+                f"Категория: {human_category}",
+            ]
+            await message.reply_text("\n".join(summary_lines))
+            await message.reply_text("Если всё верно, напиши 'подтверждаю'. Иначе укажи нужные правки целиком.")
+
+            state = {
+                "pending_intent": "finance_transaction",
+                "payload": {
+                    "user_id": user_id,
+                    "amount": amount_value,
+                    "type": direction_value,
+                    "notes": text_for_processing,
+                    "category_name": human_category,
+                },
+            }
+            if context is not None:
+                context.chat_data['pending_confirmation'] = state
+            else:
+                logger.warning("Bot context not available to store confirmation state")
+
+            return
 
         elif intent == 'create_task':
-            # Show typing for database operation
             await message.chat.send_action(action="typing")
-            
-            # Create task
+
+            task_title = title or description or raw_text or ""
+            normalized_title = task_title.strip()
+
+            task_deadline = deadline
+            if not task_deadline and raw_text:
+                task_deadline = await parse_deadline_phrase(raw_text)
+
+            if not normalized_title:
+                await message.reply_text("❓ Я не понял название задачи. Напиши, что нужно сделать.")
+                return
+
+            if not task_deadline:
+                await message.reply_text("📅 На когда поставить задачу? Напиши дату или хотя бы 'завтра', 'послезавтра'.")
+                return
+
             task_data = {
                 "user_id": user_id,
-                "title": title or description,
+                "title": normalized_title,
                 "description": description,
                 "priority": priority,
-                "status": "new"
+                "status": "new",
+                "deadline": task_deadline,
             }
 
-            if deadline:
-                task_data["deadline"] = deadline
-
-            response = supabase.table("tasks").insert(task_data).execute()
+            supabase.table("tasks").insert(task_data).execute()
 
             priority_emoji = {"low": "🟢", "medium": "🟡", "high": "🟠", "critical": "🔴"}.get(priority, "🟡")
 
             await message.reply_text(
                 f"✅ Задача создана!\n"
-                f"{priority_emoji} «{title or description}»\n"
-                f"{'📅 ' + deadline if deadline else ''}"
+                f"{priority_emoji} «{normalized_title}»\n"
+                f"📅 {task_deadline}"
             )
 
         elif intent == 'create_note':

@@ -34,32 +34,35 @@ const FinanceOverview = ({
 
   return (
     <div className="grid gap-4">
-      <div className="rounded-lg border border-border bg-surface p-4 shadow-card">
+      <div className="rounded-2xl border border-borderStrong bg-surface/70 p-6 shadow-card backdrop-blur-xl">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold text-textMuted">Последние операции</h3>
-          <Button variant="secondary" className="px-3 py-1 text-xs" onClick={onCreateTransaction}>
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-textMuted">Последние операции</p>
+            <h3 className="text-lg font-semibold text-text">Движение средств</h3>
+          </div>
+          <Button variant="secondary" className="px-4 py-2" onClick={onCreateTransaction}>
             Добавить
           </Button>
         </div>
-        <ul className="mt-3 space-y-3 text-sm">
+        <ul className="mt-4 space-y-3 text-sm">
           {transactions.slice(0, 10).map((transaction) => {
             const account = accounts.find((acc) => acc.id === transaction.account_id);
             const category = categories.find((cat) => cat.id === transaction.category_id);
             return (
               <li
                 key={transaction.id}
-                className="flex items-center justify-between gap-4 rounded-md border border-border bg-surfaceAlt p-3"
+                className="flex items-center justify-between gap-4 rounded-2xl border border-borderStrong bg-surfaceGlass/80 p-4 transition-transform duration-300 ease-out-soft hover:-translate-y-0.5 hover:bg-surfaceGlass"
               >
                 <div>
                   <p className="font-medium text-text">{transaction.description ?? 'Операция'}</p>
                   <p className="text-xs text-textMuted">{formatDateTime(transaction.occurred_at)}</p>
-                  <p className="text-xs text-textMuted">
+                  <p className="text-xs text-textSecondary">
                     {account?.name ?? 'Счёт неизвестен'} · {category?.name ?? 'Категория не назначена'}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <span
-                    className={`text-sm font-semibold ${transaction.amount >= 0 ? 'text-success' : 'text-danger'}`}
+                    className={`text-base font-semibold ${transaction.amount >= 0 ? 'text-success' : 'text-danger'}`}
                   >
                     {formatAmount(transaction.amount)}
                   </span>

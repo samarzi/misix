@@ -22,6 +22,12 @@ import {
   createPersonalEntry,
   updatePersonalEntry,
   deletePersonalEntry,
+  createTask,
+  updateTask,
+  deleteTask,
+  createNote,
+  updateNote,
+  deleteNote,
 } from './client';
 import type {
   DashboardSummaryResponse,
@@ -53,6 +59,102 @@ export const useCreateTransaction = (userId: string) => {
         };
       });
       queryClient.invalidateQueries({ queryKey: [...DASHBOARD_QUERY_KEY, userId] });
+    },
+  });
+};
+
+export const useCreateTask = (userId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: createTask,
+    onSuccess: (data) => {
+      queryClient.setQueryData<DashboardSummaryResponse>([...DASHBOARD_QUERY_KEY, userId], (prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          tasks: [data, ...prev.tasks],
+        };
+      });
+    },
+  });
+};
+
+export const useUpdateTask = (userId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateTask,
+    onSuccess: (data) => {
+      queryClient.setQueryData<DashboardSummaryResponse>([...DASHBOARD_QUERY_KEY, userId], (prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          tasks: prev.tasks.map((task) => (task.id === data.id ? data : task)),
+        };
+      });
+    },
+  });
+};
+
+export const useDeleteTask = (userId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: deleteTask,
+    onSuccess: (_, id) => {
+      queryClient.setQueryData<DashboardSummaryResponse>([...DASHBOARD_QUERY_KEY, userId], (prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          tasks: prev.tasks.filter((task) => task.id !== id),
+        };
+      });
+    },
+  });
+};
+
+export const useCreateNote = (userId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: createNote,
+    onSuccess: (data) => {
+      queryClient.setQueryData<DashboardSummaryResponse>([...DASHBOARD_QUERY_KEY, userId], (prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          notes: [data, ...prev.notes],
+        };
+      });
+    },
+  });
+};
+
+export const useUpdateNote = (userId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateNote,
+    onSuccess: (data) => {
+      queryClient.setQueryData<DashboardSummaryResponse>([...DASHBOARD_QUERY_KEY, userId], (prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          notes: prev.notes.map((note) => (note.id === data.id ? data : note)),
+        };
+      });
+    },
+  });
+};
+
+export const useDeleteNote = (userId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: deleteNote,
+    onSuccess: (_, id) => {
+      queryClient.setQueryData<DashboardSummaryResponse>([...DASHBOARD_QUERY_KEY, userId], (prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          notes: prev.notes.filter((note) => note.id !== id),
+        };
+      });
     },
   });
 };

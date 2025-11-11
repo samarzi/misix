@@ -63,27 +63,30 @@ const FinanceTransactionForm = ({
 
   return (
     <form
-      className="flex flex-col gap-3"
+      className="flex flex-col gap-4"
       onSubmit={handleSubmit(async (values) => {
         await onSubmit(values);
         reset();
       })}
     >
-      <label className="flex flex-col gap-1 text-sm">
-        <span>Сумма</span>
+      <label className="flex flex-col gap-2 text-sm text-textMuted">
+        <span className="text-xs uppercase tracking-[0.2em] text-textMuted">Сумма</span>
         <input
           type="number"
           step="0.01"
-          className="rounded-md border border-border bg-surface px-3 py-2"
+          className="rounded-xl border border-borderStrong bg-surface/60 px-4 py-2 text-text transition-colors focus:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
           {...register('amount', { required: 'Укажи сумму', valueAsNumber: true })}
         />
         {errors.amount && <span className="text-xs text-danger">{errors.amount.message}</span>}
       </label>
 
-      <div className="grid gap-3 md:grid-cols-2">
-        <label className="flex flex-col gap-1 text-sm">
-          <span>Счёт</span>
-          <select className="rounded-md border border-border bg-surface px-3 py-2" {...register('account_id', { required: true })}>
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="flex flex-col gap-2 text-sm text-textMuted">
+          <span className="text-xs uppercase tracking-[0.2em] text-textMuted">Счёт</span>
+          <select
+            className="rounded-xl border border-borderStrong bg-surface/60 px-4 py-2 text-text transition-colors focus:border-primary focus:outline-none"
+            {...register('account_id', { required: true })}
+          >
             {accounts.map((account) => (
               <option key={account.id} value={account.id}>
                 {account.name}
@@ -92,9 +95,12 @@ const FinanceTransactionForm = ({
           </select>
         </label>
 
-        <label className="flex flex-col gap-1 text-sm">
-          <span>Категория</span>
-          <select className="rounded-md border border-border bg-surface px-3 py-2" {...register('category_id', { required: true })}>
+        <label className="flex flex-col gap-2 text-sm text-textMuted">
+          <span className="text-xs uppercase tracking-[0.2em] text-textMuted">Категория</span>
+          <select
+            className="rounded-xl border border-borderStrong bg-surface/60 px-4 py-2 text-text transition-colors focus:border-primary focus:outline-none"
+            {...register('category_id', { required: true })}
+          >
             {categories.map((category) => (
               <option key={category.id} value={category.id}>
                 {category.name}
@@ -104,25 +110,36 @@ const FinanceTransactionForm = ({
         </label>
       </div>
 
-      <label className="flex flex-col gap-1 text-sm">
-        <span>Тип</span>
-        <select className="rounded-md border border-border bg-surface px-3 py-2" {...register('type')}>
+      <label className="flex flex-col gap-2 text-sm text-textMuted">
+        <span className="text-xs uppercase tracking-[0.2em] text-textMuted">Тип</span>
+        <select
+          className="rounded-xl border border-borderStrong bg-surface/60 px-4 py-2 text-text transition-colors focus:border-primary focus:outline-none"
+          {...register('type')}
+        >
           <option value="income">Доход</option>
           <option value="expense">Расход</option>
         </select>
       </label>
 
-      <label className="flex flex-col gap-1 text-sm">
-        <span>Описание</span>
-        <input className="rounded-md border border-border bg-surface px-3 py-2" {...register('description')} />
+      <label className="flex flex-col gap-2 text-sm text-textMuted">
+        <span className="text-xs uppercase tracking-[0.2em] text-textMuted">Описание</span>
+        <input
+          className="rounded-xl border border-borderStrong bg-surface/60 px-4 py-2 text-text transition-colors focus:border-primary focus:outline-none"
+          placeholder="Например: Аренда офиса"
+          {...register('description')}
+        />
       </label>
 
-      <label className="flex flex-col gap-1 text-sm">
-        <span>Дата</span>
-        <input type="datetime-local" className="rounded-md border border-border bg-surface px-3 py-2" {...register('occurred_at')} />
+      <label className="flex flex-col gap-2 text-sm text-textMuted">
+        <span className="text-xs uppercase tracking-[0.2em] text-textMuted">Дата</span>
+        <input
+          type="datetime-local"
+          className="rounded-xl border border-borderStrong bg-surface/60 px-4 py-2 text-text transition-colors focus:border-primary focus:outline-none"
+          {...register('occurred_at')}
+        />
       </label>
 
-      <div className="mt-4 flex justify-end gap-3">
+      <div className="mt-6 flex justify-end gap-3">
         <Button type="button" variant="secondary" onClick={onCancel}>
           Отмена
         </Button>

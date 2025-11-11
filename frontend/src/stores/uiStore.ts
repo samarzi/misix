@@ -8,6 +8,8 @@ export type FinanceTabKey = 'overview' | 'accounts' | 'categories' | 'rules';
 
 export type ModalType =
   | null
+  | 'task'
+  | 'task-delete'
   | 'finance-transaction'
   | 'finance-delete-transaction'
   | 'finance-account'
@@ -16,6 +18,8 @@ export type ModalType =
   | 'finance-delete-account'
   | 'finance-delete-category'
   | 'finance-delete-rule'
+  | 'note'
+  | 'note-delete'
   | 'reminder'
   | 'reminder-cancel'
   | 'personal-category'
@@ -41,6 +45,14 @@ export interface PinState {
   error?: string | null;
 }
 
+export type ToastType = 'success' | 'error' | 'info';
+
+export interface ToastState {
+  visible: boolean;
+  message: string;
+  type: ToastType;
+}
+
 export interface UiState {
   view: DashboardView;
   section: DashboardSectionKey;
@@ -48,6 +60,7 @@ export interface UiState {
   tone: string;
   modal: ModalState;
   pin: PinState;
+  toast: ToastState;
   setView: (view: DashboardView) => void;
   setSection: (section: DashboardSectionKey) => void;
   setFinanceTab: (tab: FinanceTabKey) => void;
@@ -55,6 +68,8 @@ export interface UiState {
   openModal: (type: ModalType, payload?: ModalPayload) => void;
   closeModal: () => void;
   setPinState: (pin: Partial<PinState>) => void;
+  showToast: (message: string, type?: ToastType) => void;
+  hideToast: () => void;
 }
 
 const resolveInitialTone = () => {
@@ -76,6 +91,11 @@ export const useUiStore = create<UiState>((set) => ({
     locked: false,
     error: null,
   },
+  toast: {
+    visible: false,
+    message: '',
+    type: 'info',
+  },
   setView: (view) => set({ view }),
   setSection: (section) => set({ section, view: 'detail' }),
   setFinanceTab: (financeTab) => set({ financeTab }),
@@ -92,4 +112,20 @@ export const useUiStore = create<UiState>((set) => ({
         ...pin,
       },
     })),
+  showToast: (message, type = 'info') =>
+    set({
+      toast: {
+        visible: true,
+        message,
+        type,
+      },
+    }),
+  hideToast: () =>
+    set({
+      toast: {
+        visible: false,
+        message: '',
+        type: 'info',
+      },
+    }),
 }));

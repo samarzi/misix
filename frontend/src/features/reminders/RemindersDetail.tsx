@@ -42,24 +42,28 @@ const RemindersDetail = ({ reminders, tone, onCreateReminder, onEditReminder, on
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex justify-end">
         <Button variant="secondary" onClick={onCreateReminder}>
           Новое напоминание
         </Button>
       </div>
       {reminders.map((reminder) => (
-        <div key={reminder.id} className="rounded-lg border border-border bg-surface p-4 shadow-card">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div
+          key={reminder.id}
+          className="rounded-2xl border border-borderStrong bg-surface/70 p-5 shadow-card backdrop-blur-xl transition-transform duration-300 ease-out-soft hover:-translate-y-1 hover:shadow-glow"
+        >
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <h3 className="text-base font-semibold text-text">{reminder.title}</h3>
-              <p className="text-sm text-textMuted">{formatDateTime(reminder.reminder_time)}</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-textMuted">Напоминание</p>
+              <h3 className="text-lg font-semibold text-text">{reminder.title}</h3>
+              <p className="text-sm text-textSecondary">{formatDateTime(reminder.reminder_time)}</p>
               <p className="text-xs text-textMuted">Часовой пояс: {reminder.timezone}</p>
               {reminder.recurrence_rule && (
                 <p className="text-xs text-textMuted">Повторение: {reminder.recurrence_rule}</p>
               )}
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-3">
               <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusBadgeClass[reminder.status]}`}>
                 {statusLabel[reminder.status]}
               </span>

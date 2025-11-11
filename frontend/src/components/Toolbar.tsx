@@ -10,11 +10,11 @@ interface ToolbarProps {
 
 const Toolbar = ({ greeting, tone, onToneChange, actions }: ToolbarProps) => {
   return (
-    <div className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-4 shadow-card">
-      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+    <div className="flex flex-col gap-5 rounded-2xl border border-borderStrong bg-surface/70 p-6 shadow-card backdrop-blur-xl">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="text-sm font-medium text-textMuted">Приветствие</p>
-          <h1 className="text-xl font-semibold text-text">{greeting}</h1>
+          <p className="text-xs uppercase tracking-[0.2em] text-textMuted">Приветствие</p>
+          <h1 className="text-2xl font-semibold text-text md:text-3xl">{greeting}</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {MISIX_TONE_STYLES.map((toneOption) => (
@@ -22,18 +22,19 @@ const Toolbar = ({ greeting, tone, onToneChange, actions }: ToolbarProps) => {
               key={toneOption.key}
               type="button"
               onClick={() => onToneChange(toneOption.key)}
-              className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
+              className={`group relative overflow-hidden rounded-full border px-4 py-2 text-sm font-medium transition-all duration-350 ease-out-soft ${
                 tone === toneOption.key
-                  ? 'border-primary bg-primaryMuted text-primary'
-                  : 'border-border bg-surfaceAlt text-text'
+                  ? 'border-primary bg-primaryMuted text-primary shadow-glow'
+                  : 'border-borderStrong bg-surfaceGlass text-textSecondary hover:text-text'
               }`}
             >
+              <span className="pointer-events-none absolute inset-0 translate-x-[-120%] bg-[linear-gradient(120deg,transparent,rgba(255,255,255,0.35),transparent)] transition-transform duration-500 group-hover:translate-x-[120%]" aria-hidden="true" />
               {toneOption.label}
             </button>
           ))}
         </div>
       </div>
-      {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+      {actions && <div className="flex flex-wrap gap-3">{actions}</div>}
     </div>
   );
 };

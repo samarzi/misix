@@ -15,17 +15,23 @@ const FinanceAccountList = ({ accounts, onEdit, onDelete }: FinanceAccountListPr
   }
 
   return (
-    <div className="grid gap-3 md:grid-cols-2">
+    <div className="grid gap-4 md:grid-cols-2">
       {accounts.map((account) => (
-        <div key={account.id} className="rounded-lg border border-border bg-surface p-4 shadow-card">
-          <div className="flex items-start justify-between gap-2">
+        <div
+          key={account.id}
+          className="rounded-2xl border border-borderStrong bg-surface/70 p-5 shadow-card backdrop-blur-xl transition-transform duration-300 ease-out-soft hover:-translate-y-1 hover:shadow-glow"
+        >
+          <div className="flex items-start justify-between gap-3">
             <div>
-              <h3 className="text-base font-semibold text-text">{account.name}</h3>
-              <p className="text-sm text-textMuted">{account.institution ?? 'Без банка'}</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-textMuted">Счёт</p>
+              <h3 className="text-lg font-semibold text-text">{account.name}</h3>
+              <p className="text-sm text-textSecondary">{account.institution ?? 'Без банка'}</p>
             </div>
-            <span className="text-lg font-semibold text-text">{formatAmount(account.balance)}</span>
+            <span className="text-xl font-semibold text-text">
+              {formatAmount(account.balance)}
+            </span>
           </div>
-          <div className="mt-4 flex gap-2">
+          <div className="mt-5 flex gap-3">
             <Button variant="secondary" onClick={() => onEdit(account.id)}>
               Изменить
             </Button>

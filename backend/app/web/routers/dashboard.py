@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException
 
 from app.shared.supabase import get_supabase_client
@@ -56,6 +56,27 @@ async def get_dashboard_summary(user_id: str):
             return response.data or []
         except Exception as exc:  # noqa: BLE001
             logger.warning("Failed to select from %s for dashboard: %s", table, exc)
+            return []
+
+    def _select_since(
+        table: str,
+        timestamp_column: str,
+        since_iso: str,
+        *,
+        columns: str = "*",
+    ) -> list[dict]:
+        try:
+            response = (
+                supabase
+                .table(table)
+                .select(columns)
+                .eq("user_id", user_id)
+                .gte(timestamp_column, since_iso)
+                .execute()
+            )
+            return response.data or []
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to select recent rows from %s: %s", table, exc)
             return []
 
     try:
@@ -191,6 +212,103 @@ async def get_dashboard_summary(user_id: str):
             },
         }
 
+        now_utc = datetime.now(timezone.utc)
+        seven_days_ago = now_utc - timedelta(days=7)
+        since_iso = seven_days_ago.isoformat()
+
+        recent_tasks = _select_since(
+            "tasks",
+            "created_at",
+            since_iso,
+            columns="status,created_at,updated_at",
+        )
+        tasks_created_last7 = len(recent_tasks)
+        tasks_completed_last7 = sum(1 for item in recent_tasks if item.get("status") == "completed")
+
+        recent_transactions = _select_since(
+            "finance_transactions",
+            "transaction_date",
+            since_iso,
+            columns="amount,type,category_id,transaction_date",
+        )
+        income_last7 = 0.0
+        expense_last7 = 0.0
+        category_totals_last7: dict[str | None, float] = {}
+        for item in recent_transactions:
+            amount = float(item.get("amount") or 0)
+            if item.get("type") == "income":
+                income_last7 += amount
+            else:
+                expense_last7 += amount
+            key = item.get("category_id")
+            category_totals_last7[key] = category_totals_last7.get(key, 0.0) + amount
+
+        recent_personal_entries = _select_since(
+            "personal_data_entries",
+            "created_at",
+            since_iso,
+            columns="is_favorite,is_confidential,created_at",
+        )
+        personal_created_last7 = len(recent_personal_entries)
+        personal_favorites = sum(1 for item in recent_personal_entries if item.get("is_favorite"))
+
+        reminder_upcoming_count = 0
+        reminder_horizon = now_utc + timedelta(days=7)
+        for item in reminder_all:
+            if item.get("status") != "scheduled":
+                continue
+            raw_time = item.get("reminder_time")
+            if not raw_time:
+                continue
+            try:
+                parsed = datetime.fromisoformat(str(raw_time).replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if now_utc <= parsed <= reminder_horizon:
+                reminder_upcoming_count += 1
+
+        top_category_entries = []
+        for category in finance_categories:
+            total = category_totals_last7.get(category.get("id"), 0.0)
+            if total:
+                top_category_entries.append(
+                    {
+                        "category_id": category.get("id"),
+                        "category_name": category.get("name"),
+                        "total": round(total, 2),
+                    }
+                )
+        uncategorized_total = category_totals_last7.get(None, 0.0)
+        if uncategorized_total:
+            top_category_entries.append(
+                {
+                    "category_id": None,
+                    "category_name": "Без категории",
+                    "total": round(uncategorized_total, 2),
+                }
+            )
+        top_category_entries.sort(key=lambda item: item["total"], reverse=True)
+        top_categories_last7 = top_category_entries[:5]
+
+        statistics = {
+            "tasks": {
+                "createdLast7": tasks_created_last7,
+                "completedLast7": tasks_completed_last7,
+            },
+            "finances": {
+                "incomeLast7": round(income_last7, 2),
+                "expenseLast7": round(expense_last7, 2),
+                "topCategoriesLast7": top_categories_last7,
+            },
+            "personal": {
+                "createdLast7": personal_created_last7,
+                "favorites": personal_favorites,
+            },
+            "reminders": {
+                "upcoming7Days": reminder_upcoming_count,
+            },
+        }
+
         return {
             "tasks": tasks,
             "notes": notes,
@@ -206,6 +324,7 @@ async def get_dashboard_summary(user_id: str):
             "financeAccounts": finance_accounts,
             "financeCategoryRules": finance_category_rules,
             "overview": overview,
+            "statistics": statistics,
         }
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Failed to fetch dashboard data: {exc}") from exc

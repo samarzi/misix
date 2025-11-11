@@ -25,17 +25,57 @@ export interface DashboardOverview {
   };
 }
 
+export interface DashboardStatistics {
+  tasks: {
+    createdLast7: number;
+    completedLast7: number;
+  };
+  finances: {
+    incomeLast7: number;
+    expenseLast7: number;
+    topCategoriesLast7: Array<{
+      category_id: string | null;
+      category_name: string;
+      total: number;
+    }>;
+  };
+  personal: {
+    createdLast7: number;
+    favorites: number;
+  };
+  reminders: {
+    upcoming7Days: number;
+  };
+}
+
+export type TaskStatus = 'new' | 'in_progress' | 'waiting' | 'completed' | 'cancelled';
+
+export type TaskPriority = 'low' | 'medium' | 'high' | 'critical';
+
 export interface TaskSummary {
   id: string;
   title: string;
-  status: 'open' | 'done';
-  due_date?: string | null;
+  description?: string | null;
+  status: TaskStatus;
+  priority?: TaskPriority | null;
+  deadline?: string | null;
+  estimated_hours?: number | null;
+  actual_hours?: number | null;
+  project_id?: string | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface NoteSummary {
   id: string;
-  title: string;
+  title?: string | null;
+  content: string;
+  content_format?: string;
+  folder_id?: string | null;
+  is_favorite?: boolean;
+  is_archived?: boolean;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface FinanceAccount {
@@ -137,6 +177,7 @@ export interface DashboardSummaryResponse {
   personalEntries: PersonalEntry[];
   personalCategories?: PersonalCategory[];
   userSettings?: UserAssistantSettings | null;
+  statistics?: DashboardStatistics;
 }
 
 export interface ToneOption {

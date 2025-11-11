@@ -1,6 +1,8 @@
 import axios from 'axios';
 import type {
   DashboardSummaryResponse,
+  TaskSummary,
+  NoteSummary,
   FinanceAccount,
   FinanceCategory,
   FinanceRule,
@@ -55,6 +57,28 @@ export type UpdatePersonalCategoryPayload = Partial<CreatePersonalCategoryPayloa
 export type CreatePersonalEntryPayload = Omit<PersonalEntry, 'id' | 'is_confidential'>;
 
 export type UpdatePersonalEntryPayload = Partial<CreatePersonalEntryPayload> & { id: string };
+
+export type CreateTaskPayload = {
+  title: string;
+  description?: string | null;
+  priority?: TaskSummary['priority'];
+  status?: TaskSummary['status'];
+  deadline?: string | null;
+  estimated_hours?: number | null;
+  actual_hours?: number | null;
+  project_id?: string | null;
+};
+
+export type UpdateTaskPayload = Partial<CreateTaskPayload> & { id: string };
+
+export type CreateNotePayload = {
+  title?: string | null;
+  content: string;
+  content_format?: string;
+  folder_id?: string | null;
+};
+
+export type UpdateNotePayload = Partial<CreateNotePayload> & { id: string };
 
 const client = axios.create({
   baseURL: API_BASE_URL,
@@ -186,4 +210,34 @@ export const updatePersonalEntry = async (payload: UpdatePersonalEntryPayload) =
 
 export const deletePersonalEntry = async (id: string) => {
   await client.delete(`/api/personal/entries/${id}`);
+};
+
+export const createTask = async (payload: CreateTaskPayload) => {
+  const { data } = await client.post<TaskSummary>('/api/tasks', payload);
+  return data;
+};
+
+export const updateTask = async (payload: UpdateTaskPayload) => {
+  const { id, ...rest } = payload;
+  const { data } = await client.put<TaskSummary>(`/api/tasks/${id}`, rest);
+  return data;
+};
+
+export const deleteTask = async (id: string) => {
+  await client.delete(`/api/tasks/${id}`);
+};
+
+export const createNote = async (payload: CreateNotePayload) => {
+  const { data } = await client.post<NoteSummary>('/api/notes', payload);
+  return data;
+};
+
+export const updateNote = async (payload: UpdateNotePayload) => {
+  const { id, ...rest } = payload;
+  const { data } = await client.put<NoteSummary>(`/api/notes/${id}`, rest);
+  return data;
+};
+
+export const deleteNote = async (id: string) => {
+  await client.delete(`/api/notes/${id}`);
 };

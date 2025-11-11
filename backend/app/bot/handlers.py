@@ -33,10 +33,14 @@ CONVERSATION_BUFFER_LIMIT: Final = 6
 SUMMARY_TRIGGER_MESSAGES: Final = 12
 SUMMARY_TABLE_NAME: Final = "assistant_conversation_summaries"
 MAX_STORED_MESSAGES_PER_USER: Final = 200
+DEFAULT_TEASING_PERSONA_NAME: Final = "teasing"
 
 _conversation_buffers: dict[str, deque] = {}
 _conversation_message_counts: dict[str, int] = {}
 _conversation_summary_cache: dict[str, Optional[str]] = {}
+
+_default_teasing_persona_id: Optional[str] = None
+_default_persona_lookup_failed: bool = False
 
 def _get_conversation_buffer(user_id: str) -> deque:
     buffer = _conversation_buffers.get(user_id)
@@ -66,6 +70,35 @@ async def _load_latest_summary(user_id: str) -> Optional[str]:
             return summary_value
     except Exception as exc:
         logger.warning("Failed to load summary for %s: %s", user_id, exc)
+    return None
+
+
+async def _get_default_teasing_persona_id() -> Optional[str]:
+    global _default_teasing_persona_id, _default_persona_lookup_failed
+
+    if _default_teasing_persona_id is not None:
+        return _default_teasing_persona_id
+    if _default_persona_lookup_failed or not supabase_available():
+        return None
+
+    try:
+        supabase = get_supabase_client()
+        response = (
+            supabase
+            .table("assistant_personas")
+            .select("id")
+            .eq("name", DEFAULT_TEASING_PERSONA_NAME)
+            .eq("is_active", True)
+            .limit(1)
+            .execute()
+        )
+        if response.data:
+            _default_teasing_persona_id = response.data[0].get("id")
+            return _default_teasing_persona_id
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to fetch default persona %s: %s", DEFAULT_TEASING_PERSONA_NAME, exc)
+
+    _default_persona_lookup_failed = True
     return None
 
 async def _store_summary(user_id: str, summary: str, telegram_id: int | None = None) -> None:
@@ -309,13 +342,32 @@ async def ensure_user_assistant_settings(user_id: str) -> Optional[dict]:
             .limit(1)
             .execute()
         )
+        default_persona_id = await _get_default_teasing_persona_id()
+
         if response.data:
-            return response.data[0]
+            settings_row = response.data[0]
+            if settings_row.get("current_persona_id") or not default_persona_id:
+                return settings_row
+
+            updated = (
+                supabase
+                .table("user_assistant_settings")
+                .update({"current_persona_id": default_persona_id})
+                .eq("user_id", user_id)
+                .execute()
+            )
+            if updated.data:
+                return updated.data[0]
+            settings_row["current_persona_id"] = default_persona_id
+            return settings_row
 
         created = (
             supabase
             .table("user_assistant_settings")
-            .insert({"user_id": user_id})
+            .insert({
+                "user_id": user_id,
+                **({"current_persona_id": default_persona_id} if default_persona_id else {}),
+            })
             .execute()
         )
         if created.data:

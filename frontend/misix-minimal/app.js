@@ -17,6 +17,280 @@ function normalizeBackendUrl(value) {
       return decoded.replace(/\/$/, "");
     }
 
+function openTransactionModal(transaction = null) {
+  const payload = transaction ? { ...transaction } : {
+    amount: '',
+    account_id: state.financeAccounts[0]?.id ?? '',
+    type: 'expense',
+    category_id: state.financeCategories[0]?.id ?? '',
+    description: '',
+    merchant: '',
+    payment_method: '',
+    tags: [],
+    transaction_date: new Date().toISOString(),
+    notes: '',
+  };
+  openModal({
+    type: 'transaction',
+    payload,
+    accounts: state.financeAccounts,
+    categories: state.financeCategories,
+    isEdit: Boolean(transaction),
+    id: transaction?.id,
+  });
+}
+
+function openAccountModal(account = null) {
+  openModal({
+    type: 'account',
+    payload: account ? { ...account } : {},
+    isEdit: Boolean(account),
+    id: account?.id,
+  });
+}
+
+function openCategoryModal(category = null) {
+  openModal({
+    type: 'category',
+    payload: category ? { ...category } : {},
+    isEdit: Boolean(category),
+    id: category?.id,
+  });
+}
+
+function openRuleModal(rule = null) {
+  openModal({
+    type: 'rule',
+    payload: rule ? { ...rule } : {},
+    categories: state.financeCategories,
+    isEdit: Boolean(rule),
+    id: rule?.id,
+  });
+}
+
+function collectModalData() {
+  const formFields = document.querySelectorAll('[data-field]');
+  const data = {};
+  formFields.forEach((field) => {
+    const key = field.getAttribute('data-field');
+    if (!key) return;
+    if (field.type === 'checkbox') {
+      data[key] = field.checked;
+    } else if (field.tagName === 'SELECT') {
+      data[key] = field.value;
+    } else if (field.dataset.field === 'tags') {
+      data[key] = field.value
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+    } else {
+      data[key] = field.value;
+    }
+  });
+  return data;
+}
+
+async function handleModalConfirm() {
+  if (!state.modal) return;
+  const { type, id } = state.modal;
+  const data = collectModalData();
+
+  try {
+    switch (type) {
+      case 'transaction':
+        await upsertTransaction({ id, data });
+        break;
+      case 'account':
+        await upsertAccount({ id, data });
+        break;
+      case 'category':
+        await upsertCategory({ id, data });
+        break;
+      case 'rule':
+        await upsertRule({ id, data });
+        break;
+      default:
+        break;
+    }
+    closeModal();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    setModalError(message);
+  }
+}
+
+async function handlePurgeConfirm() {
+  if (!state.modal || state.modal.type !== 'purge-category') return;
+  const { category } = state.modal;
+  const options = {};
+  document.querySelectorAll('[data-field]').forEach((input) => {
+    const key = input.getAttribute('data-field');
+    options[key] = input.checked;
+  });
+
+  try {
+    await purgeCategory(category.id, options);
+    closeModal();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    setModalError(message);
+  }
+}
+
+async function upsertTransaction({ id, data }) {
+  const payload = {
+    amount: Number(data.amount),
+    account_id: data.account_id || null,
+    type: data.type,
+    category_id: data.category_id || null,
+    description: data.description || null,
+    merchant: data.merchant || null,
+    payment_method: data.payment_method || null,
+    tags: Array.isArray(data.tags) ? data.tags : [],
+    transaction_date: fromInputDateTime(data.transaction_date) || new Date().toISOString(),
+    notes: data.notes || null,
+    currency: 'RUB',
+  };
+
+  if (!payload.amount || !payload.account_id || !payload.type) {
+    throw new Error('Заполните сумму, счёт и тип операции');
+  }
+
+  if (id) {
+    await apiRequest(`/api/finances/transactions/${id}`, { method: 'PUT', body: payload });
+  } else {
+    await apiRequest('/api/finances/transactions', { method: 'POST', body: payload });
+  }
+
+  await refreshFinances();
+}
+
+async function deleteTransaction(id) {
+  await apiRequest(`/api/finances/transactions/${id}`, { method: 'DELETE' });
+  await refreshFinances();
+}
+
+async function upsertAccount({ id, data }) {
+  const payload = {
+    name: data.name,
+    account_type: data.account_type || 'other',
+    currency: data.currency || 'RUB',
+    balance: data.balance === '' ? null : Number(data.balance),
+    color: data.color || null,
+    icon: data.icon || null,
+    is_archived: Boolean(data.is_archived),
+    sort_order: data.sort_order ? Number(data.sort_order) : 0,
+  };
+
+  if (!payload.name) {
+    throw new Error('Введите название счёта');
+  }
+
+  const method = id ? 'PUT' : 'POST';
+  const path = id ? `/api/finances/accounts/${id}` : '/api/finances/accounts';
+  await apiRequest(path, { method, body: payload });
+  await refreshAccounts();
+}
+
+async function deleteAccount(id) {
+  await apiRequest(`/api/finances/accounts/${id}`, { method: 'DELETE' });
+  await refreshAccounts();
+}
+
+async function upsertCategory({ id, data }) {
+  const payload = {
+    name: data.name,
+    type: data.type || 'expense',
+    color: data.color || null,
+    icon: data.icon || null,
+    parent_id: data.parent_id || null,
+  };
+
+  if (!payload.name) {
+    throw new Error('Введите название категории');
+  }
+
+  const method = id ? 'PUT' : 'POST';
+  const path = id ? `/api/finances/categories/${id}` : '/api/finances/categories';
+  await apiRequest(path, { method, body: payload });
+  await Promise.all([refreshCategories(), refreshFinances()]);
+}
+
+async function deleteCategory(id) {
+  await apiRequest(`/api/finances/categories/${id}`, { method: 'DELETE' });
+  await Promise.all([refreshCategories(), refreshFinances()]);
+}
+
+async function upsertRule({ id, data }) {
+  const payload = {
+    match_type: data.match_type,
+    match_pattern: data.match_pattern,
+    category_id: data.category_id,
+    confidence: data.confidence ? Number(data.confidence) : 1,
+    is_active: Boolean(data.is_active),
+  };
+
+  if (!payload.match_type || !payload.match_pattern || !payload.category_id) {
+    throw new Error('Заполни поля правила');
+  }
+
+  const method = id ? 'PUT' : 'POST';
+  const path = id ? `/api/finances/category-rules/${id}` : '/api/finances/category-rules';
+  await apiRequest(path, { method, body: payload });
+  await refreshRules();
+}
+
+async function deleteRule(id) {
+  await apiRequest(`/api/finances/category-rules/${id}`, { method: 'DELETE' });
+  await refreshRules();
+}
+
+async function purgeCategory(categoryId, options) {
+  await apiRequest(`/api/finances/categories/${categoryId}/purge`, { method: 'POST', body: options });
+  await Promise.all([refreshFinances(), refreshRules()]);
+}
+
+async function refreshAccounts() {
+  try {
+    const data = await apiRequest('/api/finances/accounts');
+    setState({ financeAccounts: Array.isArray(data) ? data : [] });
+  } catch (error) {
+    console.error('Failed to refresh accounts', error);
+  }
+}
+
+async function refreshCategories() {
+  try {
+    const data = await apiRequest('/api/finances/categories');
+    setState({ financeCategories: Array.isArray(data) ? data : [] });
+  } catch (error) {
+    console.error('Failed to refresh categories', error);
+  }
+}
+
+async function refreshRules() {
+  try {
+    const data = await apiRequest('/api/finances/category-rules');
+    setState({ financeCategoryRules: Array.isArray(data) ? data : [] });
+  } catch (error) {
+    console.error('Failed to refresh rules', error);
+  }
+}
+
+async function refreshFinances() {
+  try {
+    const transactions = await apiRequest('/api/finances/transactions');
+    const overviewResponse = await apiRequest('/api/dashboard/summary?user_id=' + encodeURIComponent(state.userId));
+    setState({
+      finances: Array.isArray(transactions) ? transactions : [],
+      overview: overviewResponse?.overview || state.overview,
+    });
+    await Promise.all([refreshAccounts(), refreshCategories(), refreshRules()]);
+  } catch (error) {
+    console.error('Failed to refresh finances', error);
+  }
+}
+
 function renderModal(modalState) {
   const baseActions = `
     <div class="modal-actions">
@@ -554,6 +828,31 @@ function tone(key, params = {}) {
   return template != null ? template : (params.fallback ?? '');
 }
 
+function hydrateToneStyle() {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return;
+  }
+  try {
+    const storedTone = window.localStorage.getItem(TONE_STORAGE_KEY);
+    if (storedTone) {
+      state.toneStyle = storedTone;
+    }
+  } catch (error) {
+    console.warn('Unable to restore tone preference', error);
+  }
+}
+
+function persistToneStyle(tone) {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return;
+  }
+  try {
+    window.localStorage.setItem(TONE_STORAGE_KEY, tone);
+  } catch (error) {
+    console.warn('Unable to persist tone preference', error);
+  }
+}
+
 const ACCOUNT_TYPE_OPTIONS = [
   { value: 'cash', label: 'Наличные' },
   { value: 'bank', label: 'Банковский счёт' },
@@ -759,6 +1058,7 @@ function clearSecurityFromStorage() {
 
 hydrateSecurityState();
 state.unlocked = !state.passwordConfigured;
+hydrateToneStyle();
 
 function resetSecuritySettings() {
   state.passwordHash = null;
@@ -1812,7 +2112,7 @@ function renderDashboard() {
 function renderLockOverlay() {
   return `
     <div class="modal-backdrop lock">
-      <div class="modal bounce-in" id="unlock-modal">
+      <div class="modal" id="unlock-modal">
         <h3>Введите PIN</h3>
         <p>Для доступа к дашборду нужно подтвердить код</p>
         ${renderPinDots(state.pinEntry)}
@@ -1837,7 +2137,7 @@ function renderFooter() {
 function renderPinDots(entry) {
   return `
     <div class="pin-dots">
-      ${entry.map((digit, index) => `<div class="dot ${digit ? 'filled' : ''}" data-index="${index}"></div>`).join('')}
+      ${entry.map((digit, index) => `<div class="pin-dot ${digit ? 'filled' : ''}" data-index="${index}"></div>`).join('')}
     </div>
   `;
 }
@@ -1935,7 +2235,7 @@ function renderPasswordModalContent() {
 function renderSettingsView() {
   const { passwordConfigured } = state;
   return `
-    <div class="card settings-card fade-in">
+    <div class="card settings-card">
       <div class="section-header">
         <div>
           <h3>Настройки безопасности</h3>
@@ -2023,6 +2323,15 @@ function initDashboardListeners() {
   const logoutBtn = document.getElementById('logout-btn');
   if (logoutBtn) logoutBtn.addEventListener('click', logout);
 
+  document.querySelectorAll('[data-action="tone-select"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      const toneValue = event.currentTarget.getAttribute('data-tone');
+      if (!toneValue || state.toneStyle === toneValue) return;
+      persistToneStyle(toneValue);
+      setState({ toneStyle: toneValue });
+    });
+  });
+
   document.querySelectorAll('[data-action="open-detail"]').forEach((button) => {
     button.addEventListener('click', (event) => {
       const section = event.currentTarget.getAttribute('data-section');
@@ -2044,6 +2353,143 @@ function initDashboardListeners() {
     openSettingsBtn.addEventListener('click', () => {
       setState({ view: 'settings' });
     });
+  }
+
+  document.querySelectorAll('[data-action="finance-view"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      const view = event.currentTarget.getAttribute('data-view');
+      if (!view || state.financeView === view) return;
+      setState({ financeView: view });
+    });
+  });
+
+  const financeActionHandlers = {
+    'finance-add-transaction': () => openTransactionModal(),
+    'finance-add-account': () => openAccountModal(),
+    'finance-add-category': () => openCategoryModal(),
+    'finance-add-rule': () => openRuleModal(),
+  };
+
+  document.querySelectorAll('[data-action^="finance-add-"]').forEach((button) => {
+    const action = button.getAttribute('data-action');
+    const handler = financeActionHandlers[action];
+    if (handler) {
+      button.addEventListener('click', handler);
+    }
+  });
+
+  document.querySelectorAll('[data-action="finance-edit-account"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      const id = event.currentTarget.getAttribute('data-id');
+      const account = state.financeAccounts.find((item) => item.id === id);
+      if (!account) return;
+      openAccountModal(account);
+    });
+  });
+
+  document.querySelectorAll('[data-action="finance-delete-account"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      const id = event.currentTarget.getAttribute('data-id');
+      if (!id) return;
+      if (window.confirm('Удалить счёт? Убедись, что операции уже перенесены.')) {
+        deleteAccount(id);
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-action="finance-edit-category"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      const id = event.currentTarget.getAttribute('data-id');
+      const category = state.financeCategories.find((item) => item.id === id);
+      if (!category) return;
+      openCategoryModal(category);
+    });
+  });
+
+  document.querySelectorAll('[data-action="finance-delete-category"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      const id = event.currentTarget.getAttribute('data-id');
+      if (!id) return;
+      if (window.confirm('Удалить категорию? Все операции останутся без категории.')) {
+        deleteCategory(id);
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-action="finance-purge-category"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      const id = event.currentTarget.getAttribute('data-id');
+      const category = state.financeCategories.find((item) => item.id === id);
+      if (!category) return;
+      openModal({
+        type: 'purge-category',
+        category,
+        options: { remove_transactions: true, remove_debts: false, remove_rules: false },
+      });
+    });
+  });
+
+  document.querySelectorAll('[data-action="finance-edit-rule"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      const id = event.currentTarget.getAttribute('data-id');
+      const rule = state.financeCategoryRules.find((item) => item.id === id);
+      if (!rule) return;
+      openRuleModal(rule);
+    });
+  });
+
+  document.querySelectorAll('[data-action="finance-delete-rule"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      const id = event.currentTarget.getAttribute('data-id');
+      if (!id) return;
+      if (window.confirm('Удалить правило автокатегоризации?')) {
+        deleteRule(id);
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-action="finance-edit-transaction"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      const id = event.currentTarget.getAttribute('data-id');
+      const transaction = state.finances.find((item) => item.id === id);
+      if (!transaction) return;
+      openTransactionModal(transaction);
+    });
+  });
+
+  document.querySelectorAll('[data-action="finance-delete-transaction"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      const id = event.currentTarget.getAttribute('data-id');
+      if (!id) return;
+      if (window.confirm('Удалить операцию?')) {
+        deleteTransaction(id);
+      }
+    });
+  });
+
+  const modalConfirm = document.querySelector('[data-action="modal-confirm"]');
+  if (modalConfirm) {
+    modalConfirm.addEventListener('click', handleModalConfirm);
+  }
+
+  const modalCancel = document.querySelector('[data-action="modal-cancel"]');
+  if (modalCancel) {
+    modalCancel.addEventListener('click', () => closeModal());
+  }
+
+  const modalPurgeConfirm = document.querySelector('[data-action="modal-purge-confirm"]');
+  if (modalPurgeConfirm) {
+    modalPurgeConfirm.addEventListener('click', handlePurgeConfirm);
+  }
+
+  if (state.modal && state.modal.type === 'transaction') {
+    const typeSelect = document.querySelector('[data-field="type"]');
+    if (typeSelect) {
+      typeSelect.addEventListener('change', (event) => {
+        const nextType = event.target.value;
+        setState({ modal: { ...state.modal, payload: { ...state.modal.payload, type: nextType } } });
+      });
+    }
   }
 
   const healthTypeSelect = document.getElementById('health-filter-type');

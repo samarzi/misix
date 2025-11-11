@@ -74,6 +74,14 @@ async def get_dashboard_summary(user_id: str):
             "finance_categories",
             "id,name,type,color,icon,parent_id,is_default,sort_order"
         )
+        finance_accounts = _safe_select_all(
+            "finance_accounts",
+            "id,name,account_type,currency,balance,color,icon,is_archived,sort_order"
+        )
+        finance_category_rules = _safe_select_all(
+            "finance_category_rules",
+            "id,match_type,match_pattern,category_id,confidence,is_active"
+        )
 
         # Task stats
         task_status_rows = _safe_select_all("tasks", "status")
@@ -186,6 +194,8 @@ async def get_dashboard_summary(user_id: str):
             "personalEntries": personal_entries,
             "messages": messages,
             "financeCategories": finance_categories,
+            "financeAccounts": finance_accounts,
+            "financeCategoryRules": finance_category_rules,
             "overview": overview,
         }
     except Exception as exc:  # noqa: BLE001

@@ -272,11 +272,39 @@ create trigger set_finance_categories_updated_at
 create index if not exists idx_finance_categories_user on finance_categories (user_id);
 create index if not exists idx_finance_categories_type on finance_categories (user_id, type);
 
+-- Finance accounts
+create table if not exists finance_accounts (
+    id uuid primary key default uuid_generate_v4(),
+    user_id uuid not null,
+    name text not null,
+    account_type text default 'other',
+    currency text default 'RUB',
+    balance numeric(14,2) default 0,
+    color text,
+    icon text,
+    is_archived boolean default false,
+    sort_order integer default 0,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    constraint finance_accounts_user_fk foreign key (user_id)
+        references users (id) on delete cascade
+);
+
+drop trigger if exists set_finance_accounts_updated_at on finance_accounts;
+create trigger set_finance_accounts_updated_at
+    before update on finance_accounts
+    for each row
+    execute procedure trigger_set_timestamp();
+
+create index if not exists idx_finance_accounts_user on finance_accounts (user_id);
+create index if not exists idx_finance_accounts_archived on finance_accounts (user_id, is_archived);
+
 -- Finance transactions
 create table if not exists finance_transactions (
     id uuid primary key default uuid_generate_v4(),
     user_id uuid not null,
     category_id uuid,
+    account_id uuid,
     amount numeric(12,2) not null,
     currency text default 'RUB',
     type text not null check (type in ('income', 'expense')),
@@ -291,7 +319,9 @@ create table if not exists finance_transactions (
     constraint finance_transactions_user_fk foreign key (user_id)
         references users (id) on delete cascade,
     constraint finance_transactions_category_fk foreign key (category_id)
-        references finance_categories (id) on delete set null
+        references finance_categories (id) on delete set null,
+    constraint finance_transactions_account_fk foreign key (account_id)
+        references finance_accounts (id) on delete set null
 );
 
 drop trigger if exists set_finance_transactions_updated_at on finance_transactions;
@@ -302,6 +332,7 @@ create trigger set_finance_transactions_updated_at
 
 create index if not exists idx_finance_transactions_user on finance_transactions (user_id);
 create index if not exists idx_finance_transactions_category on finance_transactions (category_id);
+create index if not exists idx_finance_transactions_account on finance_transactions (account_id);
 create index if not exists idx_finance_transactions_date on finance_transactions (user_id, transaction_date desc);
 
 -- Finance debts
@@ -316,12 +347,15 @@ create table if not exists finance_debts (
     due_date date,
     notes text,
     category_id uuid,
+    account_id uuid,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
     constraint finance_debts_user_fk foreign key (user_id)
         references users (id) on delete cascade,
     constraint finance_debts_category_fk foreign key (category_id)
-        references finance_categories (id) on delete set null
+        references finance_categories (id) on delete set null,
+    constraint finance_debts_account_fk foreign key (account_id)
+        references finance_accounts (id) on delete set null
 );
 
 drop trigger if exists set_finance_debts_updated_at on finance_debts;
@@ -332,6 +366,32 @@ create trigger set_finance_debts_updated_at
 
 create index if not exists idx_finance_debts_user on finance_debts (user_id);
 create index if not exists idx_finance_debts_due on finance_debts (user_id, due_date);
+
+-- Finance category rules
+create table if not exists finance_category_rules (
+    id uuid primary key default uuid_generate_v4(),
+    user_id uuid not null,
+    match_type text not null check (match_type in ('merchant', 'description', 'tag', 'counterparty')),
+    match_pattern text not null,
+    category_id uuid not null,
+    confidence numeric(5,2) default 1.0,
+    is_active boolean default true,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    constraint finance_category_rules_user_fk foreign key (user_id)
+        references users (id) on delete cascade,
+    constraint finance_category_rules_category_fk foreign key (category_id)
+        references finance_categories (id) on delete cascade
+);
+
+drop trigger if exists set_finance_category_rules_updated_at on finance_category_rules;
+create trigger set_finance_category_rules_updated_at
+    before update on finance_category_rules
+    for each row
+    execute procedure trigger_set_timestamp();
+
+create unique index if not exists idx_finance_category_rules_pattern
+    on finance_category_rules (user_id, match_type, match_pattern);
 
 -- Reminders schedule
 create table if not exists reminders (

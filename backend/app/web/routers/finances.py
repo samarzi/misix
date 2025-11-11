@@ -25,6 +25,7 @@ class FinanceCategory(FinanceCategoryBase):
 
 class FinanceTransactionBase(BaseModel):
     category_id: Optional[str] = None
+    account_id: Optional[str] = None
     amount: float
     currency: str = "RUB"
     type: str  # 'income' or 'expense'
@@ -40,6 +41,39 @@ class FinanceTransaction(FinanceTransactionBase):
     user_id: str
     created_at: datetime
     updated_at: datetime
+
+class FinanceAccountBase(BaseModel):
+    name: str
+    account_type: Optional[str] = "other"
+    currency: Optional[str] = "RUB"
+    balance: Optional[float] = None
+    color: Optional[str] = None
+    icon: Optional[str] = None
+    is_archived: Optional[bool] = False
+    sort_order: Optional[int] = 0
+
+
+class FinanceAccount(FinanceAccountBase):
+    id: str
+    user_id: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class FinanceCategoryRuleBase(BaseModel):
+    match_type: str  # merchant, description, tag, counterparty
+    match_pattern: str
+    category_id: str
+    confidence: Optional[float] = 1.0
+    is_active: Optional[bool] = True
+
+
+class FinanceCategoryRule(FinanceCategoryRuleBase):
+    id: str
+    user_id: str
+    created_at: datetime
+    updated_at: datetime
+
 
 class PersonalDataCategoryBase(BaseModel):
     name: str
@@ -119,6 +153,7 @@ class FinanceDebtBase(BaseModel):
     due_date: Optional[date] = None
     notes: Optional[str] = None
     category_id: Optional[str] = None
+    account_id: Optional[str] = None
 
 
 class FinanceDebt(FinanceDebtBase):
@@ -164,6 +199,11 @@ class UserAssistantSettings(BaseModel):
     timezone: str = "Europe/Moscow"
     working_hours_start: str = "09:00"
     working_hours_end: str = "18:00"
+
+class CategoryPurgeRequest(BaseModel):
+    remove_transactions: bool = True
+    remove_debts: bool = False
+    remove_rules: bool = False
 
 # API endpoints will be implemented below
 # (continuing in the next part...)
@@ -252,6 +292,199 @@ async def delete_finance_category(
     return {"message": "Category deleted successfully"}
 
 # =============================================
+# FINANCE ACCOUNTS
+# =============================================
+
+
+@router.get("/accounts", response_model=List[FinanceAccount])
+async def get_finance_accounts(
+    include_archived: bool = False,
+    user_id: str = Depends(get_current_user_id)
+):
+    supabase = get_supabase_client()
+    query = supabase.table("finance_accounts").select("*").eq("user_id", user_id)
+    if not include_archived:
+        query = query.eq("is_archived", False)
+
+    response = query.order("sort_order").execute()
+    return response.data
+
+
+@router.post("/accounts", response_model=FinanceAccount)
+async def create_finance_account(
+    account: FinanceAccountBase,
+    user_id: str = Depends(get_current_user_id)
+):
+    supabase = get_supabase_client()
+    payload = {
+        "user_id": user_id,
+        "name": account.name,
+        "account_type": account.account_type,
+        "currency": account.currency,
+        "balance": account.balance,
+        "color": account.color,
+        "icon": account.icon,
+        "is_archived": account.is_archived,
+        "sort_order": account.sort_order,
+    }
+
+    response = supabase.table("finance_accounts").insert(payload).execute()
+    if not response.data:
+        raise HTTPException(status_code=500, detail="Failed to create account")
+
+    return response.data[0]
+
+
+@router.put("/accounts/{account_id}", response_model=FinanceAccount)
+async def update_finance_account(
+    account_id: str,
+    account: FinanceAccountBase,
+    user_id: str = Depends(get_current_user_id)
+):
+    supabase = get_supabase_client()
+    payload = {
+        "name": account.name,
+        "account_type": account.account_type,
+        "currency": account.currency,
+        "balance": account.balance,
+        "color": account.color,
+        "icon": account.icon,
+        "is_archived": account.is_archived,
+        "sort_order": account.sort_order,
+    }
+
+    response = supabase.table("finance_accounts").update(payload).eq("id", account_id).eq("user_id", user_id).execute()
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    return response.data[0]
+
+
+@router.delete("/accounts/{account_id}")
+async def delete_finance_account(
+    account_id: str,
+    user_id: str = Depends(get_current_user_id)
+):
+    supabase = get_supabase_client()
+
+    # Ensure no transactions remain attached to account
+    tx_count = supabase.table("finance_transactions").select("id", count="exact").eq("user_id", user_id).eq("account_id", account_id).execute()
+    debt_count = supabase.table("finance_debts").select("id", count="exact").eq("user_id", user_id).eq("account_id", account_id).execute()
+    if (tx_count.count or 0) > 0 or (debt_count.count or 0) > 0:
+        raise HTTPException(status_code=400, detail="Account has linked operations. Clean them before deleting.")
+
+    response = supabase.table("finance_accounts").delete().eq("id", account_id).eq("user_id", user_id).execute()
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    return {"message": "Account deleted successfully"}
+
+
+# =============================================
+# FINANCE CATEGORY RULES
+# =============================================
+
+
+@router.get("/category-rules", response_model=List[FinanceCategoryRule])
+async def get_finance_category_rules(
+    match_type: Optional[str] = None,
+    user_id: str = Depends(get_current_user_id)
+):
+    supabase = get_supabase_client()
+    query = supabase.table("finance_category_rules").select("*").eq("user_id", user_id)
+    if match_type:
+        query = query.eq("match_type", match_type)
+
+    response = query.order("created_at", desc=True).execute()
+    return response.data
+
+
+@router.post("/category-rules", response_model=FinanceCategoryRule)
+async def create_finance_category_rule(
+    rule: FinanceCategoryRuleBase,
+    user_id: str = Depends(get_current_user_id)
+):
+    supabase = get_supabase_client()
+    payload = {
+        "user_id": user_id,
+        "match_type": rule.match_type,
+        "match_pattern": rule.match_pattern,
+        "category_id": rule.category_id,
+        "confidence": rule.confidence,
+        "is_active": rule.is_active,
+    }
+
+    response = supabase.table("finance_category_rules").insert(payload).execute()
+    if not response.data:
+        raise HTTPException(status_code=500, detail="Failed to create category rule")
+
+    return response.data[0]
+
+
+@router.put("/category-rules/{rule_id}", response_model=FinanceCategoryRule)
+async def update_finance_category_rule(
+    rule_id: str,
+    rule: FinanceCategoryRuleBase,
+    user_id: str = Depends(get_current_user_id)
+):
+    supabase = get_supabase_client()
+    payload = {
+        "match_type": rule.match_type,
+        "match_pattern": rule.match_pattern,
+        "category_id": rule.category_id,
+        "confidence": rule.confidence,
+        "is_active": rule.is_active,
+    }
+
+    response = supabase.table("finance_category_rules").update(payload).eq("id", rule_id).eq("user_id", user_id).execute()
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Rule not found")
+
+    return response.data[0]
+
+
+@router.delete("/category-rules/{rule_id}")
+async def delete_finance_category_rule(
+    rule_id: str,
+    user_id: str = Depends(get_current_user_id)
+):
+    supabase = get_supabase_client()
+    response = supabase.table("finance_category_rules").delete().eq("id", rule_id).eq("user_id", user_id).execute()
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Rule not found")
+
+    return {"message": "Rule deleted successfully"}
+
+
+# =============================================
+# CATEGORY DATA PURGE
+# =============================================
+
+
+@router.post("/categories/{category_id}/purge")
+async def purge_category_data(
+    category_id: str,
+    purge: CategoryPurgeRequest,
+    user_id: str = Depends(get_current_user_id)
+):
+    supabase = get_supabase_client()
+    removed = {"transactions": 0, "debts": 0, "rules": 0}
+
+    if purge.remove_transactions:
+        response = supabase.table("finance_transactions").delete().eq("user_id", user_id).eq("category_id", category_id).execute()
+        removed["transactions"] = len(response.data or [])
+
+    if purge.remove_debts:
+        response = supabase.table("finance_debts").delete().eq("user_id", user_id).eq("category_id", category_id).execute()
+        removed["debts"] = len(response.data or [])
+
+    if purge.remove_rules:
+        response = supabase.table("finance_category_rules").delete().eq("user_id", user_id).eq("category_id", category_id).execute()
+        removed["rules"] = len(response.data or [])
+
+    return {"status": "ok", "removed": removed}
+
+# =============================================
 # FINANCE TRANSACTIONS
 # =============================================
 
@@ -294,6 +527,7 @@ async def create_finance_transaction(
     transaction_data = {
         "user_id": user_id,
         "category_id": transaction.category_id,
+        "account_id": transaction.account_id,
         "amount": transaction.amount,
         "currency": transaction.currency,
         "type": transaction.type,
@@ -323,6 +557,7 @@ async def update_finance_transaction(
 
     update_data = {
         "category_id": transaction.category_id,
+        "account_id": transaction.account_id,
         "amount": transaction.amount,
         "currency": transaction.currency,
         "type": transaction.type,
@@ -455,6 +690,7 @@ async def create_finance_debt(
         "due_date": debt.due_date,
         "notes": debt.notes,
         "category_id": debt.category_id,
+        "account_id": debt.account_id,
     }
 
     response = supabase.table("finance_debts").insert(debt_data).execute()
@@ -480,6 +716,7 @@ async def update_finance_debt(
         "due_date": debt_update.due_date,
         "notes": debt_update.notes,
         "category_id": debt_update.category_id,
+        "account_id": debt_update.account_id,
         "updated_at": datetime.utcnow().isoformat()
     }
 

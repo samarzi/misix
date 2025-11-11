@@ -16,6 +16,258 @@ function normalizeBackendUrl(value) {
     if (/^https?:\/\//i.test(decoded)) {
       return decoded.replace(/\/$/, "");
     }
+
+function renderModal(modalState) {
+  const baseActions = `
+    <div class="modal-actions">
+      <span class="spacer"></span>
+      <button type="button" class="secondary" data-action="modal-cancel">Отмена</button>
+      <button type="button" data-action="modal-confirm">Сохранить</button>
+    </div>
+  `;
+
+  if (modalState.type === 'transaction') {
+    const { payload = {}, accounts = [], categories = [], isEdit } = modalState;
+    const title = tone('transactionFormTitle', { isEdit });
+    return renderGenericModal({
+      title,
+      body: renderTransactionForm({ payload, accounts, categories }),
+      actions: baseActions,
+      error: modalState.error,
+    });
+  }
+
+  if (modalState.type === 'account') {
+    const { payload = {}, isEdit } = modalState;
+    const title = tone('accountFormTitle', { isEdit });
+    return renderGenericModal({
+      title,
+      body: renderAccountForm(payload),
+      actions: baseActions,
+      error: modalState.error,
+    });
+  }
+
+  if (modalState.type === 'category') {
+    const { payload = {}, isEdit } = modalState;
+    const title = tone('categoryFormTitle', { isEdit });
+    return renderGenericModal({
+      title,
+      body: renderCategoryForm(payload),
+      actions: baseActions,
+      error: modalState.error,
+    });
+  }
+
+  if (modalState.type === 'rule') {
+    const { payload = {}, categories = [], isEdit } = modalState;
+    const title = tone('ruleFormTitle', { isEdit });
+    return renderGenericModal({
+      title,
+      body: renderRuleForm({ payload, categories }),
+      actions: baseActions,
+      error: modalState.error,
+    });
+  }
+
+  if (modalState.type === 'purge-category') {
+    const { category, options = {} } = modalState;
+    const title = tone('purgeConfirmTitle', { name: category.name });
+    const body = `
+      <div class="modal-section">
+        <p>${tone('purgeConfirmHint')}</p>
+        <label><input type="checkbox" data-field="remove_transactions" ${options.remove_transactions !== false ? 'checked' : ''}> Удалить операции</label>
+        <label><input type="checkbox" data-field="remove_debts" ${options.remove_debts ? 'checked' : ''}> Удалить долги</label>
+        <label><input type="checkbox" data-field="remove_rules" ${options.remove_rules ? 'checked' : ''}> Удалить правила</label>
+      </div>
+    `;
+    const actions = `
+      <div class="modal-actions">
+        <button type="button" class="secondary" data-action="modal-cancel">Отмена</button>
+        <button type="button" class="danger" data-action="modal-purge-confirm">Очистить</button>
+      </div>
+    `;
+    return renderGenericModal({ title, body, actions, error: modalState.error });
+  }
+
+  return '';
+}
+
+function renderGenericModal({ title, body, actions, error }) {
+  return `
+    <div class="modal-backdrop">
+      <div class="modal bounce-in">
+        <h3>${title}</h3>
+        ${error ? `<div class="notice error">${error}</div>` : ''}
+        <div class="modal-section">
+          ${body}
+        </div>
+        ${actions}
+      </div>
+    </div>
+  `;
+}
+
+function renderTransactionForm({ payload, accounts, categories }) {
+  const { amount = '', account_id = '', type = 'expense', category_id = '', description = '', merchant = '', payment_method = '', tags = [], transaction_date = '', notes = '' } = payload;
+  const tagsValue = Array.isArray(tags) ? tags.join(', ') : '';
+  return `
+    <label>
+      Сумма
+      <input type="number" step="0.01" data-field="amount" value="${amount}" placeholder="0.00" required>
+    </label>
+    <div class="grid two">
+      <label>
+        Счёт
+        <select data-field="account_id" required>
+          <option value="">Выбери счёт</option>
+          ${accounts.map((acc) => `<option value="${acc.id}" ${acc.id === account_id ? 'selected' : ''}>${acc.name}</option>`).join('')}
+        </select>
+      </label>
+      <label>
+        Тип
+        <select data-field="type">
+          <option value="income" ${type === 'income' ? 'selected' : ''}>Доход</option>
+          <option value="expense" ${type === 'expense' ? 'selected' : ''}>Расход</option>
+        </select>
+      </label>
+    </div>
+    <label>
+      Категория
+      <select data-field="category_id" required>
+        <option value="">Выбери категорию</option>
+        ${categories.map((cat) => `<option value="${cat.id}" ${cat.id === category_id ? 'selected' : ''}>${cat.name}</option>`).join('')}
+      </select>
+    </label>
+    <label>
+      Описание
+      <input type="text" data-field="description" value="${description}" placeholder="Например, оплата кофе">
+    </label>
+    <label>
+      Продавец/мерчант
+      <input type="text" data-field="merchant" value="${merchant}" placeholder="Кофейня, магазин">
+    </label>
+    <label>
+      Способ оплаты
+      <input type="text" data-field="payment_method" value="${payment_method}" placeholder="Карта, наличные">
+    </label>
+    <label>
+      Теги
+      <input type="text" data-field="tags" value="${tagsValue}" placeholder="через запятую">
+    </label>
+    <label>
+      Дата операции
+      <input type="datetime-local" data-field="transaction_date" value="${toInputDateTime(transaction_date)}">
+    </label>
+    <label>
+      Заметка
+      <textarea data-field="notes" rows="3">${notes || ''}</textarea>
+    </label>
+  `;
+}
+
+function renderAccountForm(payload = {}) {
+  const { name = '', account_type = 'other', currency = 'RUB', balance = '', color = '', icon = '', is_archived = false } = payload;
+  return `
+    <label>
+      Название счёта
+      <input type="text" data-field="name" value="${name}" placeholder="Например, Сбербанк" required>
+    </label>
+    <div class="grid two">
+      <label>
+        Тип
+        <select data-field="account_type">
+          ${ACCOUNT_TYPE_OPTIONS.map((option) => `<option value="${option.value}" ${option.value === account_type ? 'selected' : ''}>${option.label}</option>`).join('')}
+        </select>
+      </label>
+      <label>
+        Валюта
+        <input type="text" data-field="currency" value="${currency || 'RUB'}" placeholder="RUB" maxlength="3">
+      </label>
+    </div>
+    <label>
+      Баланс (опционально)
+      <input type="number" step="0.01" data-field="balance" value="${balance === null || balance === undefined ? '' : balance}">
+    </label>
+    <label>
+      Цвет
+      <input type="text" data-field="color" value="${color || ''}" placeholder="#4587F8">
+    </label>
+    <label>
+      Иконка
+      <input type="text" data-field="icon" value="${icon || ''}" placeholder="🏦">
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" data-field="is_archived" ${is_archived ? 'checked' : ''}> Архивировать счёт
+    </label>
+  `;
+}
+
+function renderCategoryForm(payload = {}) {
+  const { name = '', type = 'expense', color = '', icon = '', parent_id = null } = payload;
+  const categories = state.financeCategories || [];
+  return `
+    <label>
+      Название категории
+      <input type="text" data-field="name" value="${name}" placeholder="Например, Продукты" required>
+    </label>
+    <label>
+      Тип категории
+      <select data-field="type">
+        <option value="income" ${type === 'income' ? 'selected' : ''}>Доход</option>
+        <option value="expense" ${type === 'expense' ? 'selected' : ''}>Расход</option>
+      </select>
+    </label>
+    <label>
+      Цвет
+      <input type="text" data-field="color" value="${color || ''}" placeholder="#FF6B6B">
+    </label>
+    <label>
+      Иконка
+      <input type="text" data-field="icon" value="${icon || ''}" placeholder="🛒">
+    </label>
+    <label>
+      Родительская категория (опционально)
+      <select data-field="parent_id">
+        <option value="">Без родителя</option>
+        ${categories
+          .filter((category) => category.id !== payload.id)
+          .map((category) => `<option value="${category.id}" ${category.id === parent_id ? 'selected' : ''}>${category.name}</option>`)
+          .join('')}
+      </select>
+    </label>
+  `;
+}
+
+function renderRuleForm({ payload = {}, categories = [] }) {
+  const { match_type = 'merchant', match_pattern = '', category_id = '', confidence = 1, is_active = true } = payload;
+  return `
+    <label>
+      Что узнаём
+      <select data-field="match_type">
+        ${RULE_MATCH_TYPES.map((rule) => `<option value="${rule.value}" ${rule.value === match_type ? 'selected' : ''}>${rule.label}</option>`).join('')}
+      </select>
+    </label>
+    <label>
+      Значение
+      <input type="text" data-field="match_pattern" value="${match_pattern}" placeholder="Например, Кофейня Питер" required>
+    </label>
+    <label>
+      Категория
+      <select data-field="category_id" required>
+        <option value="">Выбери категорию</option>
+        ${categories.map((category) => `<option value="${category.id}" ${category.id === category_id ? 'selected' : ''}>${category.name}</option>`).join('')}
+      </select>
+    </label>
+    <label>
+      Уверенность (0-1)
+      <input type="number" step="0.05" min="0" max="1" data-field="confidence" value="${confidence}">
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" data-field="is_active" ${is_active ? 'checked' : ''}> Правило активно
+    </label>
+  `;
+}
   } catch (error) {
     // ignore decode errors and fall back to raw value
   }
@@ -73,6 +325,8 @@ const DEV_MODE_PROFILE = {
   username: 't0g0r0t',
   fullName: 'samarzi',
 };
+
+const TONE_STORAGE_KEY = 'misix_tone_style';
 
 const DASHBOARD_SECTIONS = [
   {
@@ -225,6 +479,194 @@ function pluralize(count, forms) {
   return forms[2];
 }
 
+const TONE_LIBRARY = {
+  neutral: {
+    greeting: ({ name }) => `Привет, ${name} 👋`,
+    subtitleReady: ({ timestamp }) => `Обновлено ${timestamp}`,
+    subtitlePending: () => 'Данные появятся после синхронизации',
+    financesEmpty: () => 'Когда добавишь доходы или расходы, они появятся здесь.',
+    accountsEmpty: () => 'Пока нет ни одного счёта — добавь первый, чтобы навести порядок.',
+    categoriesEmpty: () => 'Классические категории уже здесь, но ты можешь создать свои.',
+    rulesEmpty: () => 'Здесь будут правила автокатегоризации. Пока нечего запоминать.',
+    transactionFormTitle: ({ isEdit }) => (isEdit ? 'Изменить операцию' : 'Новая операция'),
+    debtFormTitle: ({ isEdit }) => (isEdit ? 'Изменить долг' : 'Новый долг'),
+    accountFormTitle: ({ isEdit }) => (isEdit ? 'Изменить счёт' : 'Новый счёт'),
+    categoryFormTitle: ({ isEdit }) => (isEdit ? 'Изменить категорию' : 'Новая категория'),
+    ruleFormTitle: ({ isEdit }) => (isEdit ? 'Изменить правило' : 'Новое правило'),
+    purgeConfirmTitle: ({ name }) => `Очистка «${name}»`,
+    purgeConfirmHint: () => 'Выбери, что именно удалить для этой категории.',
+    teasingToggle: () => 'Подкалывающий',
+    businessToggle: () => 'Деловой',
+    neutralToggle: () => 'Нейтральный',
+  },
+  teasing: {
+    greeting: ({ name }) => `О, ${name}, опять пришёл считать копейки? 😏`,
+    subtitleReady: ({ timestamp }) => `Я всё пересчитал. Последняя проверка была ${timestamp}.`,
+    subtitlePending: () => 'Да-да, данные где-то едут. Терпение, миллионер.',
+    financesEmpty: () => 'Ноль операций — вот это уровень минимализма. Может, добавишь хоть что-нибудь?',
+    accountsEmpty: () => 'Счётов нет. Думаешь, под матрасом надёжнее?',
+    categoriesEmpty: () => 'Категорий мало. Неужели все траты — одна сплошная «Потратил»?',
+    rulesEmpty: () => 'Без правил я каждый раз буду мучить тебя вопросами. Ну-ну.',
+    transactionFormTitle: ({ isEdit }) => (isEdit ? 'Правим твою легендарную операцию' : 'Бросай ещё монетку'),
+    debtFormTitle: ({ isEdit }) => (isEdit ? 'Подшаманим долг' : 'Запиши, кто кому должен'),
+    accountFormTitle: ({ isEdit }) => (isEdit ? 'Правка счёта' : 'Создаём новый кошелёк'),
+    categoryFormTitle: ({ isEdit }) => (isEdit ? 'Категория получает апгрейд' : 'Придумай новую категорию'),
+    ruleFormTitle: ({ isEdit }) => (isEdit ? 'Правило, второй дубль' : 'Добавим правило, раз память не вечна'),
+    purgeConfirmTitle: ({ name }) => `Вычищаем «${name}»?`,
+    purgeConfirmHint: () => 'Последний шанс перед большим уборочным разгромом.',
+    teasingToggle: () => 'Подкалывающий (активен)',
+    businessToggle: () => 'Деловой',
+    neutralToggle: () => 'Нейтральный',
+  },
+  business: {
+    greeting: ({ name }) => `Здравствуйте, ${name}.`,
+    subtitleReady: ({ timestamp }) => `Обновлено ${timestamp}.`,
+    subtitlePending: () => 'Данные готовятся к отображению.',
+    financesEmpty: () => 'Операций нет. Добавьте первую для учёта.',
+    accountsEmpty: () => 'Создайте финансовый счёт, чтобы вести учёт средств.',
+    categoriesEmpty: () => 'Категорий нет. Создайте необходимую структуру.',
+    rulesEmpty: () => 'Правила категорий отсутствуют. Добавьте, чтобы ускорить классификацию.',
+    transactionFormTitle: ({ isEdit }) => (isEdit ? 'Редактирование операции' : 'Новая операция'),
+    debtFormTitle: ({ isEdit }) => (isEdit ? 'Редактирование долга' : 'Новый долг'),
+    accountFormTitle: ({ isEdit }) => (isEdit ? 'Редактирование счёта' : 'Новый счёт'),
+    categoryFormTitle: ({ isEdit }) => (isEdit ? 'Редактирование категории' : 'Новая категория'),
+    ruleFormTitle: ({ isEdit }) => (isEdit ? 'Редактирование правила' : 'Новое правило'),
+    purgeConfirmTitle: ({ name }) => `Очистка данных категории «${name}»`,
+    purgeConfirmHint: () => 'Выберите элементы для удаления.',
+    teasingToggle: () => 'Подкалывающий',
+    businessToggle: () => 'Деловой (активен)',
+    neutralToggle: () => 'Нейтральный',
+  },
+};
+
+function resolveToneTemplate(key) {
+  const toneKey = state.toneStyle in TONE_LIBRARY ? state.toneStyle : 'neutral';
+  const tonePack = TONE_LIBRARY[toneKey];
+  if (tonePack && tonePack[key] != null) return tonePack[key];
+  return TONE_LIBRARY.neutral[key];
+}
+
+function tone(key, params = {}) {
+  const template = resolveToneTemplate(key);
+  if (typeof template === 'function') {
+    return template(params);
+  }
+  return template != null ? template : (params.fallback ?? '');
+}
+
+const ACCOUNT_TYPE_OPTIONS = [
+  { value: 'cash', label: 'Наличные' },
+  { value: 'bank', label: 'Банковский счёт' },
+  { value: 'card', label: 'Дебетовая карта' },
+  { value: 'credit_card', label: 'Кредитная карта' },
+  { value: 'e_wallet', label: 'Электронный кошелёк' },
+  { value: 'savings', label: 'Накопительный счёт' },
+  { value: 'other', label: 'Другое' },
+];
+
+const ACCOUNT_TYPE_LABELS = ACCOUNT_TYPE_OPTIONS.reduce((acc, option) => {
+  acc[option.value] = option.label;
+  return acc;
+}, {});
+
+const RULE_MATCH_TYPES = [
+  { value: 'merchant', label: 'По продавцу' },
+  { value: 'description', label: 'По описанию' },
+  { value: 'tag', label: 'По тегу' },
+  { value: 'counterparty', label: 'По контрагенту' },
+];
+
+const DEBT_STATUS_OPTIONS = [
+  { value: 'pending', label: 'В ожидании' },
+  { value: 'paid', label: 'Закрыт' },
+  { value: 'overdue', label: 'Просрочен' },
+  { value: 'cancelled', label: 'Отменён' },
+];
+
+const DEBT_DIRECTION_OPTIONS = [
+  { value: 'owed_by_me', label: 'Я должен' },
+  { value: 'owed_to_me', label: 'Мне должны' },
+];
+
+function toInputDateTime(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  const tzOffsetMinutes = date.getTimezoneOffset();
+  const local = new Date(date.getTime() - tzOffsetMinutes * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
+function fromInputDateTime(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date.toISOString();
+}
+
+async function apiRequest(path, options = {}) {
+  const { method = 'GET' } = options;
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(options.headers || {}),
+  };
+
+  const requestInit = {
+    method,
+    headers,
+    ...options,
+  };
+
+  if (requestInit.body && typeof requestInit.body !== 'string') {
+    requestInit.body = JSON.stringify(requestInit.body);
+  }
+
+  const response = await fetch(`${BACKEND_BASE_URL}${path}`, requestInit);
+  if (!response.ok) {
+    let message = `HTTP ${response.status}`;
+    try {
+      const data = await response.json();
+      message = data?.detail || data?.message || JSON.stringify(data);
+    } catch {
+      try {
+        message = await response.text();
+      } catch {
+        // ignore
+      }
+    }
+    throw new Error(message);
+  }
+
+  if (response.status === 204) {
+    return null;
+  }
+
+  const contentType = response.headers.get('Content-Type') || '';
+  if (contentType.includes('application/json')) {
+    return response.json();
+  }
+
+  return response.text();
+}
+
+function openModal(modalState) {
+  setState({ modal: { error: null, ...modalState } });
+}
+
+function closeModal() {
+  if (!state.modal) return;
+  setState({ modal: null });
+}
+
+function setModalError(message) {
+  if (!state.modal) return;
+  setState({ modal: { ...state.modal, error: message } });
+}
+
 const state = {
   userId: null,
   userLabel: null,
@@ -232,6 +674,7 @@ const state = {
   error: null,
   view: 'summary',
   detailSection: null,
+  financeView: 'overview',
   showSettingsModal: false,
   settingsMode: null,
   passwordConfigured: false,
@@ -255,9 +698,13 @@ const state = {
   personalEntries: [],
   messages: [],
   financeCategories: [],
+  financeAccounts: [],
+  financeCategoryRules: [],
   healthFilterType: 'all',
   healthFilterPeriod: '30',
   lastUpdated: null,
+  toneStyle: 'neutral',
+  modal: null,
 };
 
 const SECURITY_STORAGE_KEYS = {
@@ -526,6 +973,8 @@ async function loadData() {
       personalEntries: data.personalEntries ?? [],
       messages: data.messages ?? [],
       financeCategories: data.financeCategories ?? [],
+      financeAccounts: data.financeAccounts ?? [],
+      financeCategoryRules: data.financeCategoryRules ?? [],
       lastUpdated: new Date(),
     });
   } catch (error) {
@@ -553,6 +1002,9 @@ function logout() {
     sleepSessions: [],
     lastUpdated: null,
     error: null,
+    financeAccounts: [],
+    financeCategoryRules: [],
+    financeCategories: [],
   });
 }
 
@@ -577,22 +1029,38 @@ function renderLogin() {
 }
 
 function renderToolbar() {
-  const name = state.userLabel ? state.userLabel : state.userId;
-  const subtitle = state.lastUpdated
-    ? `Обновлено ${formatDate(state.lastUpdated)} ${state.lastUpdated.toLocaleTimeString('ru-RU')}`
-    : 'Данные появятся после синхронизации';
+  const name = state.userLabel ? state.userLabel : state.userId || 'друг';
+  const timestamp = state.lastUpdated
+    ? `${formatDate(state.lastUpdated)} ${state.lastUpdated.toLocaleTimeString('ru-RU')}`
+    : null;
+  const subtitle = timestamp
+    ? tone('subtitleReady', { timestamp })
+    : tone('subtitlePending');
+  const greeting = tone('greeting', { name });
+
+  const toneButtons = [
+    { key: 'neutral', label: tone('neutralToggle') },
+    { key: 'teasing', label: tone('teasingToggle') },
+    { key: 'business', label: tone('businessToggle') },
+  ].map(({ key, label }) => {
+    const active = state.toneStyle === key ? 'active' : '';
+    return `<button type="button" class="chip ${active}" data-action="tone-select" data-tone="${key}">${label}</button>`;
+  }).join('');
 
   return `
     <div class="card">
       <div class="section-header">
         <div>
-          <h2 class="glow">Привет, ${name || 'друг'} 👋</h2>
+          <h2 class="glow">${greeting}</h2>
           <small>${subtitle}</small>
         </div>
         <div class="toolbar">
           <button type="button" id="refresh-btn">Обновить</button>
           <button type="button" class="secondary" id="logout-btn">Выйти</button>
         </div>
+      </div>
+      <div class="tone-toggle">
+        ${toneButtons}
       </div>
       <div class="notice${state.loading ? '' : ' hidden'}">Обновляю данные...</div>
       ${state.error ? `<div class="notice error">${state.error}</div>` : ''}
@@ -770,95 +1238,220 @@ function renderNotesDetail() {
 }
 
 function renderFinancesDetail() {
-  const { finances } = state;
+  const { finances, financeAccounts, financeCategories, financeCategoryRules, financeView } = state;
   const summary = state.overview?.finances;
-  const categories = state.financeCategories || [];
-  if (finances.length === 0) {
-    return `
-      <div class="card">
-        <div class="section-header">
-          <h3>Финансы</h3>
-          <small>0 записей</small>
-        </div>
-        <div class="empty">Когда добавишь расходы или доходы через бота, они появятся здесь.</div>
+
+  const toolbar = `
+    <div class="finance-toolbar">
+      <div class="finance-tabs">
+        ${['overview', 'accounts', 'categories', 'rules'].map((view) => {
+          const labelMap = {
+            overview: 'Операции',
+            accounts: 'Счета',
+            categories: 'Категории',
+            rules: 'Правила',
+          };
+          const isActive = financeView === view;
+          return `<button type="button" class="chip ${isActive ? 'active' : ''}" data-action="finance-view" data-view="${view}">${labelMap[view]}</button>`;
+        }).join('')}
       </div>
-    `;
+      <div class="finance-actions">
+        ${financeView === 'overview' ? '<button type="button" data-action="finance-add-transaction">Добавить операцию</button>' : ''}
+        ${financeView === 'accounts' ? '<button type="button" data-action="finance-add-account">Добавить счёт</button>' : ''}
+        ${financeView === 'categories' ? '<button type="button" data-action="finance-add-category">Добавить категорию</button>' : ''}
+        ${financeView === 'rules' ? '<button type="button" data-action="finance-add-rule">Добавить правило</button>' : ''}
+      </div>
+    </div>
+  `;
+
+  if (financeView === 'accounts') {
+    if (!financeAccounts.length) {
+      return `
+        ${toolbar}
+        <div class="card">
+          <div class="empty">${tone('accountsEmpty')}</div>
+        </div>
+      `;
+    }
+
+    const cards = financeAccounts.map((account) => {
+      const balance = account.balance != null ? formatAmount(account.balance) : '—';
+      return `
+        <div class="card account-card" data-id="${account.id}">
+          <div class="section-header">
+            <div>
+              <h3>${account.icon || '🏦'} ${account.name}</h3>
+              <small>${ACCOUNT_TYPE_LABELS[account.account_type] || account.account_type || 'Счёт'}</small>
+              <small>${balance}</small>
+            </div>
+            <div class="tags">
+              <button type="button" class="secondary" data-action="finance-edit-account" data-id="${account.id}">Изменить</button>
+              <button type="button" class="secondary danger" data-action="finance-delete-account" data-id="${account.id}">Удалить</button>
+            </div>
+          </div>
+          <div class="account-meta">
+            <span>Валюта: ${account.currency || 'RUB'}</span>
+            ${account.is_archived ? '<span class="tag">архив</span>' : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    return `${toolbar}<div class="grid">${cards}</div>`;
   }
 
-  const totalIncome = finances
-    .filter((tx) => tx.type === 'income')
-    .reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
-  const totalExpense = finances
-    .filter((tx) => tx.type === 'expense')
-    .reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
+  if (financeView === 'categories') {
+    if (!financeCategories.length) {
+      return `
+        ${toolbar}
+        <div class="card">
+          <div class="empty">${tone('categoriesEmpty')}</div>
+        </div>
+      `;
+    }
 
-  const groupedByCategory = finances.reduce((acc, tx) => {
-    const key = tx.category_id || 'uncategorized';
+    const cards = financeCategories.map((category) => {
+      const income = category.total_income ?? 0;
+      const expense = category.total_expense ?? 0;
+      const balance = income - expense;
+      return `
+        <div class="card category-card" data-id="${category.id}">
+          <div class="section-header">
+            <div>
+              <h3>${category.icon || '🏷️'} ${category.name}</h3>
+              <small>${category.type === 'income' ? 'Доходная' : 'Расходная'} категория</small>
+              <small>Баланс ${formatAmount(balance)}</small>
+            </div>
+            <div class="tags">
+              <button type="button" class="secondary" data-action="finance-edit-category" data-id="${category.id}">Изменить</button>
+              <button type="button" class="secondary" data-action="finance-purge-category" data-id="${category.id}">Очистить</button>
+              <button type="button" class="secondary danger" data-action="finance-delete-category" data-id="${category.id}">Удалить</button>
+            </div>
+          </div>
+          <div class="category-stats">
+            <span class="tag green">Доходы ${formatAmount(income)}</span>
+            <span class="tag red">Расходы ${formatAmount(expense)}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    return `${toolbar}<div class="grid">${cards}</div>`;
+  }
+
+  if (financeView === 'rules') {
+    if (!financeCategoryRules.length) {
+      return `
+        ${toolbar}
+        <div class="card">
+          <div class="empty">${tone('rulesEmpty')}</div>
+        </div>
+      `;
+    }
+
+    const ruleCards = financeCategoryRules.map((rule) => {
+      const category = financeCategories.find((cat) => cat.id === rule.category_id);
+      const categoryLabel = category ? `${category.icon || '🏷️'} ${category.name}` : 'Категория удалена';
+      const matchLabel = RULE_MATCH_TYPES.find((item) => item.value === rule.match_type)?.label ?? rule.match_type;
+      return `
+        <div class="card rule-card" data-id="${rule.id}">
+          <div class="section-header">
+            <div>
+              <h3>${matchLabel}</h3>
+              <small>${rule.match_pattern}</small>
+              <small>Категория: ${categoryLabel}</small>
+            </div>
+            <div class="tags">
+              <span class="tag">Доверие: ${(rule.confidence ?? 1) * 100}%</span>
+              <button type="button" class="secondary" data-action="finance-edit-rule" data-id="${rule.id}">Изменить</button>
+              <button type="button" class="secondary danger" data-action="finance-delete-rule" data-id="${rule.id}">Удалить</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    return `${toolbar}<div class="grid">${ruleCards}</div>`;
+  }
+
+  const byAccount = finances.reduce((acc, tx) => {
+    const key = tx.account_id || 'uncategorized';
     const bucket = acc.get(key) || [];
     bucket.push(tx);
     acc.set(key, bucket);
     return acc;
   }, new Map());
 
-  const categoryBlocks = categories.map((category) => {
-    const txs = groupedByCategory.get(category.id) || [];
-    if (txs.length === 0) {
-      return '';
+  const totals = finances.reduce((acc, tx) => {
+    if (tx.type === 'income') {
+      acc.income += Number(tx.amount || 0);
+    } else {
+      acc.expense += Number(tx.amount || 0);
     }
+    return acc;
+  }, { income: 0, expense: 0 });
 
-    const income = category.total_income ?? 0;
-    const expense = category.total_expense ?? 0;
-    const balance = income - expense;
+  const balance = totals.income - totals.expense;
 
-    const items = txs.map((tx) => `
-        <div class="item">
+  const accountSections = Array.from(byAccount.entries()).map(([accountId, txs]) => {
+    const account = financeAccounts.find((accItem) => accItem.id === accountId);
+    const accountTitle = account ? `${account.icon || '🏦'} ${account.name}` : 'Без счёта';
+    const rows = txs.map((tx) => {
+      const category = financeCategories.find((cat) => cat.id === tx.category_id);
+      const categoryLabel = category ? `${category.icon || '🏷️'} ${category.name}` : 'Категория не указана';
+      return `
+        <div class="item" data-id="${tx.id}">
           <strong>${tx.type === 'income' ? '💰 Доход' : '💸 Расход'} — ${formatAmount(tx.amount)}</strong>
           <span>${tx.description || 'Без описания'}</span>
           <div class="tags">
             <span class="tag ${tx.type === 'income' ? 'green' : 'red'}">${tx.type}</span>
-            <span class="tag">${formatDate(tx.transaction_date)}</span>
+            <span class="tag">${formatDateTime(tx.transaction_date)}</span>
+            <span class="tag">${categoryLabel}</span>
+          </div>
+          <div class="item-actions">
+            <button type="button" class="secondary" data-action="finance-edit-transaction" data-id="${tx.id}">Изменить</button>
+            <button type="button" class="secondary danger" data-action="finance-delete-transaction" data-id="${tx.id}">Удалить</button>
           </div>
         </div>
-      `).join('');
+      `;
+    }).join('');
 
     return `
-      <div class="card category-card">
+      <div class="card">
         <div class="section-header">
           <div>
-            <h3>${category.icon || '🏷️'} ${category.name || 'Категория'}</h3>
-            <small>Доходы ${formatAmount(income)} · Расходы ${formatAmount(expense)} · Баланс ${formatAmount(balance)}</small>
+            <h3>${accountTitle}</h3>
+            <small>${txs.length} ${pluralize(txs.length, ['операция', 'операции', 'операций'])}</small>
           </div>
         </div>
-        <div class="grid">${items}</div>
+        <div class="grid">${rows}</div>
       </div>
     `;
-  }).filter(Boolean).join('');
+  }).join('');
 
-  const rows = finances.map((tx) => `
-    <div class="item">
-      <strong>${tx.type === 'income' ? '💰 Доход' : '💸 Расход'} — ${formatAmount(tx.amount)}</strong>
-      <span>${tx.description || 'Без описания'}</span>
-      <div class="tags">
-        <span class="tag ${tx.type === 'income' ? 'green' : 'red'}">${tx.type}</span>
-        <span class="tag">${formatDate(tx.transaction_date)}</span>
-      </div>
-    </div>
-  `).join('');
-
-  return `
+  const summaryCard = `
     <div class="card">
       <div class="section-header">
-        <h3>Финансы</h3>
+        <h3>Операции</h3>
         <div class="tags">
-          <span class="tag green">доходов: ${formatAmount(summary?.income ?? totalIncome)}</span>
-          <span class="tag red">расходов: ${formatAmount(summary?.expense ?? totalExpense)}</span>
-          <span class="tag">баланс: ${formatAmount(summary?.balance ?? (totalIncome - totalExpense))}</span>
+          <span class="tag green">доходов: ${formatAmount(summary?.income ?? totals.income)}</span>
+          <span class="tag red">расходов: ${formatAmount(summary?.expense ?? totals.expense)}</span>
+          <span class="tag">баланс: ${formatAmount(summary?.balance ?? balance)}</span>
         </div>
       </div>
-      <div class="grid">${rows}</div>
     </div>
-    ${categoryBlocks}
   `;
+
+  if (!finances.length) {
+    return `
+      ${toolbar}
+      <div class="card">
+        <div class="empty">${tone('financesEmpty')}</div>
+      </div>
+    `;
+  }
+
+  return `${toolbar}${summaryCard}${accountSections}`;
 }
 
 function renderDebtsDetail() {
@@ -1206,10 +1799,12 @@ function renderSummaryCards() {
 function renderDashboard() {
   const overlay = state.passwordConfigured && !state.unlocked ? renderLockOverlay() : '';
   const content = state.view === 'detail' ? renderDetailView() : renderSummaryCards();
+  const modal = state.modal ? renderModal(state.modal) : '';
   return `
     ${renderToolbar()}
     ${content}
     ${renderFooter()}
+    ${modal}
     ${overlay}
   `;
 }

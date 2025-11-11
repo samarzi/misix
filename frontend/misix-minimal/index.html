@@ -510,6 +510,95 @@
       font-size: 13px;
     }
 
+    .finance-toolbar {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .finance-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .finance-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .chip {
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 233, 0.32);
+      background: rgba(17, 24, 39, 0.65);
+      color: var(--text);
+      font-size: 13px;
+      transition: background var(--transition), border-color var(--transition);
+    }
+
+    .chip.active {
+      border-color: rgba(129, 140, 248, 0.85);
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.35), rgba(236, 72, 153, 0.35));
+    }
+
+    .account-card .account-meta,
+    .category-card .category-stats,
+    .rule-card .tags {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    .item-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .modal-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      text-align: left;
+    }
+
+    .modal-section h4 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .modal-section .grid.two {
+      gap: 12px;
+    }
+
+    .modal-actions {
+      margin-top: 16px;
+    }
+
+    .modal-actions .spacer {
+      flex: 1;
+    }
+
+    .modal-actions .danger {
+      border-color: rgba(248, 113, 113, 0.4);
+      color: #fca5a5;
+    }
+
+    .tone-toggle {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    .tone-toggle .chip.active {
+      border-color: rgba(248, 113, 113, 0.55);
+    }
+
     @media (max-width: 768px) {
       #app {
         padding: 28px 14px 48px;
@@ -544,6 +633,15 @@
 
       .detail-header {
         padding: 16px;
+      }
+
+      .finance-toolbar {
+        align-items: stretch;
+      }
+
+      .finance-actions button,
+      .finance-tabs .chip {
+        flex: 1 1 100%;
       }
 
       .analytics-grid {

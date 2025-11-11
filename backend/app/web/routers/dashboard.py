@@ -220,7 +220,7 @@ async def get_dashboard_summary(user_id: str):
             "tasks",
             "created_at",
             since_iso,
-            columns="status,created_at,updated_at",
+            columns="status,created_at",
         )
         tasks_created_last7 = len(recent_tasks)
         tasks_completed_last7 = sum(1 for item in recent_tasks if item.get("status") == "completed")

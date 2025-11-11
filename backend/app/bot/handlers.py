@@ -1479,6 +1479,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         text,
         telegram_id=user.id,
         bot=context.bot,
+        context=context,
     )
 
 
@@ -1555,6 +1556,7 @@ async def process_transcribed_text(update: Update, context: ContextTypes.DEFAULT
         text,
         telegram_id=user.id,
         bot=context.bot,
+        context=context,
     )
 
 

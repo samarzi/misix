@@ -6,12 +6,13 @@ import App from './App.tsx';
 import ErrorBoundary from './components/ErrorBoundary.tsx';
 
 const queryClient = new QueryClient();
+const isDev = import.meta.env.DEV;
 
 createRoot(document.getElementById('root')!).render(
   <QueryClientProvider client={queryClient}>
     <ErrorBoundary>
       <App />
     </ErrorBoundary>
-    <ReactQueryDevtools initialIsOpen={false} />
+    {isDev ? <ReactQueryDevtools initialIsOpen={false} /> : null}
   </QueryClientProvider>,
 );

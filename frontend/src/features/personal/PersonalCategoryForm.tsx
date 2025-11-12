@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import Button from '../../components/Button';
 import type { PersonalCategory } from '../../api/types';
@@ -19,30 +19,35 @@ interface PersonalCategoryFormProps {
 }
 
 const PersonalCategoryForm = ({ defaultValues, onSubmit, onCancel, submitLabel = 'Сохранить' }: PersonalCategoryFormProps) => {
+  const normalizedDefaultValues = useMemo(
+    () => ({
+      name: defaultValues?.name ?? '',
+      description: defaultValues?.description ?? '',
+      color: defaultValues?.color ?? '',
+      icon: defaultValues?.icon ?? '',
+      is_confidential: defaultValues?.is_confidential ?? false,
+    }),
+    [
+      defaultValues?.name,
+      defaultValues?.description,
+      defaultValues?.color,
+      defaultValues?.icon,
+      defaultValues?.is_confidential,
+    ],
+  );
+
   const {
     register,
     handleSubmit,
     reset,
     formState: { errors, isSubmitting },
   } = useForm<PersonalCategoryFormValues>({
-    defaultValues: {
-      name: defaultValues?.name ?? '',
-      description: defaultValues?.description ?? '',
-      color: defaultValues?.color ?? '',
-      icon: defaultValues?.icon ?? '',
-      is_confidential: defaultValues?.is_confidential ?? false,
-    },
+    defaultValues: normalizedDefaultValues,
   });
 
   useEffect(() => {
-    reset({
-      name: defaultValues?.name ?? '',
-      description: defaultValues?.description ?? '',
-      color: defaultValues?.color ?? '',
-      icon: defaultValues?.icon ?? '',
-      is_confidential: defaultValues?.is_confidential ?? false,
-    });
-  }, [defaultValues, reset]);
+    reset(normalizedDefaultValues);
+  }, [reset, normalizedDefaultValues]);
 
   return (
     <form

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import clsx from 'clsx';
 import { useUiStore } from '../stores/uiStore';
 
@@ -9,15 +9,24 @@ const toastColors: Record<'success' | 'error' | 'info', string> = {
 };
 
 const Toast = () => {
-  const { toast, hideToast } = useUiStore((state) => ({ toast: state.toast, hideToast: state.hideToast }));
+  const hideToast = useUiStore((state) => state.hideToast);
+  const toast = useUiStore((state) => state.toast);
+  const toastVisible = toast.visible;
+  const toastContent = useMemo(
+    () => ({
+      message: toast.message,
+      type: toast.type,
+    }),
+    [toast.message, toast.type],
+  );
 
   useEffect(() => {
-    if (!toast.visible) return undefined;
+    if (!toastVisible) return undefined;
     const timer = window.setTimeout(() => hideToast(), 4000);
     return () => window.clearTimeout(timer);
-  }, [toast.visible, hideToast]);
+  }, [toastVisible, hideToast]);
 
-  if (!toast.visible) {
+  if (!toastVisible) {
     return null;
   }
 
@@ -26,16 +35,16 @@ const Toast = () => {
       <div
         className={clsx(
           'pointer-events-auto flex min-w-[260px] max-w-sm items-start gap-3 rounded-2xl border px-4 py-3 shadow-glow backdrop-blur-xl transition-transform duration-300 ease-out-soft',
-          toastColors[toast.type],
+          toastColors[toastContent.type],
         )}
       >
         <span className="text-xl">
-          {toast.type === 'success' && '✅'}
-          {toast.type === 'error' && '⚠️'}
-          {toast.type === 'info' && 'ℹ️'}
+          {toastContent.type === 'success' && '✅'}
+          {toastContent.type === 'error' && '⚠️'}
+          {toastContent.type === 'info' && 'ℹ️'}
         </span>
         <div className="flex-1 text-sm font-medium leading-snug text-text">
-          <p>{toast.message}</p>
+          <p>{toastContent.message}</p>
         </div>
         <button
           type="button"

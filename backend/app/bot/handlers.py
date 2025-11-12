@@ -2374,6 +2374,69 @@ def extract_deadline_simple(text: str) -> str | None:
     return None
 
 
+async def parse_deadline_phrase(text: str) -> str | None:
+    """Parse natural language deadline phrases into ISO date."""
+    # Try the quick keywords first
+    simple = extract_deadline_simple(text)
+    if simple:
+        return simple
+
+    text_lower = text.lower()
+
+    # Patterns like "через 3 дня", "через 2 недели"
+    match_days = re.search(r'через\s+(\d{1,2})\s*(день|дня|дней)', text_lower)
+    if match_days:
+        days = int(match_days.group(1))
+        target = datetime.now() + timedelta(days=days)
+        return target.strftime('%Y-%m-%d')
+
+    match_weeks = re.search(r'через\s+(\d{1,2})\s*(неделю|недели|недель)', text_lower)
+    if match_weeks:
+        weeks = int(match_weeks.group(1))
+        target = datetime.now() + timedelta(weeks=weeks)
+        return target.strftime('%Y-%m-%d')
+
+    if 'через неделю' in text_lower:
+        target = datetime.now() + timedelta(weeks=1)
+        return target.strftime('%Y-%m-%d')
+
+    if 'через месяц' in text_lower:
+        # Approximate as 30 days to keep implementation simple
+        target = datetime.now() + timedelta(days=30)
+        return target.strftime('%Y-%m-%d')
+
+    # Explicit dates like 12.11 or 12/11/2025
+    date_match = re.search(r'(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?', text)
+    if date_match:
+        day = int(date_match.group(1))
+        month = int(date_match.group(2))
+        year_group = date_match.group(3)
+        current_year = datetime.now().year
+        year = current_year
+        if year_group:
+            year_int = int(year_group)
+            if year_int < 100:
+                year = 2000 + year_int
+            else:
+                year = year_int
+
+        try:
+            target = datetime(year, month, day)
+        except ValueError:
+            target = None
+        else:
+            # If the date has already passed this year and no explicit year was given, roll forward
+            if not year_group and target.date() < datetime.now().date():
+                try:
+                    target = datetime(year + 1, month, day)
+                except ValueError:
+                    target = None
+        if target:
+            return target.strftime('%Y-%m-%d')
+
+    return None
+
+
 async def handle_finance_transaction(message, user_id: str, text: str):
     """Handle finance transaction parsing and creation."""
     supabase = get_supabase_client()

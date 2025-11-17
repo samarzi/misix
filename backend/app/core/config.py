@@ -130,12 +130,9 @@ class Settings(BaseSettings):
     )
     
     # Frontend Settings
-    frontend_allowed_origins: list[str] = Field(
-        default_factory=lambda: [
-            "http://localhost:5173",
-            "http://localhost:3000",
-        ],
-        description="Allowed CORS origins for frontend",
+    frontend_allowed_origins: Optional[str] = Field(
+        default="http://localhost:5173,http://localhost:3000",
+        description="Allowed CORS origins for frontend (comma-separated)",
     )
     
     # Redis Settings (for caching and rate limiting)
@@ -223,63 +220,7 @@ class Settings(BaseSettings):
             raise ValueError(f"Log level must be one of: {allowed}")
         return v_upper
     
-    @field_validator("frontend_allowed_origins", mode="before")
-    @classmethod
-    def parse_frontend_origins(cls, v):
-        """Parse frontend origins from string or list."""
-        import sys
-        
-        # Debug logging
-        print(f"DEBUG: frontend_allowed_origins raw value: {v!r}", file=sys.stderr)
-        print(f"DEBUG: frontend_allowed_origins type: {type(v)}", file=sys.stderr)
-        
-        # Handle None or empty
-        if v is None or v == "":
-            print("DEBUG: Using default origins (None or empty)", file=sys.stderr)
-            return ["http://localhost:5173", "http://localhost:3000"]
-        
-        # Handle string
-        if isinstance(v, str):
-            v = v.strip()
-            if not v:
-                print("DEBUG: Using default origins (empty string)", file=sys.stderr)
-                return ["http://localhost:5173", "http://localhost:3000"]
-            
-            # Try to parse as JSON array first (in case Render sends it that way)
-            if v.startswith("[") and v.endswith("]"):
-                try:
-                    import json
-                    parsed = json.loads(v)
-                    if isinstance(parsed, list):
-                        print(f"DEBUG: Parsed as JSON array: {parsed}", file=sys.stderr)
-                        return [str(item).strip() for item in parsed if item]
-                except Exception as e:
-                    print(f"DEBUG: Failed to parse as JSON: {e}", file=sys.stderr)
-            
-            # Parse as comma-separated string
-            origins = [origin.strip() for origin in v.split(",") if origin.strip()]
-            print(f"DEBUG: Parsed as comma-separated: {origins}", file=sys.stderr)
-            return origins
-        
-        # Handle list
-        if isinstance(v, list):
-            origins = [str(item).strip() for item in v if item]
-            print(f"DEBUG: Parsed as list: {origins}", file=sys.stderr)
-            return origins
-        
-        # Last resort: convert to string and try again
-        try:
-            str_v = str(v).strip()
-            if str_v:
-                origins = [origin.strip() for origin in str_v.split(",") if origin.strip()]
-                print(f"DEBUG: Parsed after str() conversion: {origins}", file=sys.stderr)
-                return origins
-        except Exception as e:
-            print(f"DEBUG: Failed to convert to string: {e}", file=sys.stderr)
-        
-        # If all else fails, use defaults
-        print(f"DEBUG: Using default origins (fallback), original value was: {v!r}", file=sys.stderr)
-        return ["http://localhost:5173", "http://localhost:3000"]
+
     
     @field_validator("encryption_key")
     @classmethod
@@ -313,10 +254,17 @@ class Settings(BaseSettings):
     
     def get_cors_origins(self) -> list[str]:
         """Get list of allowed CORS origins."""
+        # Parse the comma-separated string
+        if not self.frontend_allowed_origins:
+            return ["http://localhost:5173", "http://localhost:3000"]
+        
+        origins = [origin.strip() for origin in self.frontend_allowed_origins.split(",") if origin.strip()]
+        
         # In production, never allow wildcard
-        if self.is_production and "*" in self.frontend_allowed_origins:
+        if self.is_production and "*" in origins:
             raise ValueError("Wildcard CORS origin not allowed in production")
-        return self.frontend_allowed_origins
+        
+        return origins
 
 
 # ============================================================================

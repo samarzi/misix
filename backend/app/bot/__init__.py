@@ -1,19 +1,24 @@
 """Telegram bot setup for MISIX assistant."""
 
 import logging
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 from app.shared.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Initialize application
+# Initialize application and scheduler as None
 application = None
 scheduler = None
 
-if settings.telegram_bot_token:
-    application = Application.builder().token(settings.telegram_bot_token).build()
+def _create_application():
+    """Create and configure Telegram application."""
+    if not settings.telegram_bot_token:
+        return None
     
-    # Register handlers
+    # Create application
+    app = Application.builder().token(settings.telegram_bot_token).build()
+    
+    # Import handlers
     from .handlers.command import (
         handle_start_command,
         handle_help_command,
@@ -26,41 +31,54 @@ if settings.telegram_bot_token:
     )
     from .handlers.message import handle_text_message, handle_voice_message
     from .handlers.sleep import handle_sleep_start, handle_sleep_stop
-    from telegram.ext import CallbackQueryHandler
     
-    # Command handlers
-    application.add_handler(CommandHandler("start", handle_start_command))
-    application.add_handler(CommandHandler("help", handle_help_command))
-    application.add_handler(CommandHandler("profile", handle_profile_command))
-    application.add_handler(CommandHandler("tasks", handle_tasks_command))
-    application.add_handler(CommandHandler("finances", handle_finances_command))
-    application.add_handler(CommandHandler("mood", handle_mood_command))
-    application.add_handler(CommandHandler("reminders", handle_reminders_command))
-    application.add_handler(CommandHandler("sleep", handle_sleep_start))
-    application.add_handler(CommandHandler("wake", handle_sleep_stop))
+    # Register command handlers
+    app.add_handler(CommandHandler("start", handle_start_command))
+    app.add_handler(CommandHandler("help", handle_help_command))
+    app.add_handler(CommandHandler("profile", handle_profile_command))
+    app.add_handler(CommandHandler("tasks", handle_tasks_command))
+    app.add_handler(CommandHandler("finances", handle_finances_command))
+    app.add_handler(CommandHandler("mood", handle_mood_command))
+    app.add_handler(CommandHandler("reminders", handle_reminders_command))
+    app.add_handler(CommandHandler("sleep", handle_sleep_start))
+    app.add_handler(CommandHandler("wake", handle_sleep_stop))
     
-    # Callback query handlers
-    application.add_handler(CallbackQueryHandler(handle_reminder_callback, pattern="^reminder_"))
+    # Register callback query handlers
+    app.add_handler(CallbackQueryHandler(handle_reminder_callback, pattern="^reminder_"))
     
-    # Message handlers
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
-    application.add_handler(MessageHandler(filters.VOICE, handle_voice_message))
+    # Register message handlers
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
+    app.add_handler(MessageHandler(filters.VOICE, handle_voice_message))
     
-    # Setup scheduler for reminders
-    try:
-        from .scheduler import setup_scheduler, start_scheduler, stop_scheduler
-        scheduler = setup_scheduler(application.bot)
-        logger.info("Scheduler initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize scheduler: {e}", exc_info=True)
-else:
-    # Telegram bot is optional
-    pass
+    return app
+
+def get_application():
+    """Get or create the Telegram application."""
+    global application
+    if application is None and settings.telegram_bot_token:
+        application = _create_application()
+        logger.info("Telegram application created")
+    return application
+
+def get_scheduler():
+    """Get or create the scheduler."""
+    global scheduler
+    if scheduler is None:
+        app = get_application()
+        if app:
+            try:
+                from .scheduler import setup_scheduler
+                scheduler = setup_scheduler(app.bot)
+                logger.info("Scheduler initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize scheduler: {e}", exc_info=True)
+    return scheduler
 
 
 def start_bot_with_scheduler():
     """Start the bot and scheduler together."""
-    if scheduler:
+    sched = get_scheduler()
+    if sched:
         try:
             from .scheduler import start_scheduler
             start_scheduler()
@@ -71,7 +89,8 @@ def start_bot_with_scheduler():
 
 def stop_bot_with_scheduler():
     """Stop the bot and scheduler gracefully."""
-    if scheduler:
+    sched = get_scheduler()
+    if sched:
         try:
             from .scheduler import stop_scheduler
             stop_scheduler()

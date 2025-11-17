@@ -16,8 +16,8 @@ from app.repositories.user import get_user_repository
 from app.shared.config import settings
 from app.shared.supabase import get_supabase_client, supabase_available
 
-# Import Telegram bot application
-from app.bot import application, start_bot_with_scheduler, stop_bot_with_scheduler
+# Import Telegram bot functions
+from app.bot import get_application, start_bot_with_scheduler, stop_bot_with_scheduler
 
 # Import new auth router
 from app.api.routers.auth import router as new_auth_router
@@ -44,6 +44,7 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Starting MISIX application...")
     
     # Start Telegram bot
+    application = get_application()
     if application:
         try:
             if not getattr(application, "_initialized", False):
@@ -78,14 +79,14 @@ async def lifespan(app: FastAPI):
     logger.info("🛑 Shutting down MISIX application...")
     
     # Stop scheduler
-    if application:
-        try:
-            stop_bot_with_scheduler()
-            logger.info("✅ Scheduler stopped")
-        except Exception as e:
-            logger.error(f"⚠️  Error stopping scheduler: {e}")
+    try:
+        stop_bot_with_scheduler()
+        logger.info("✅ Scheduler stopped")
+    except Exception as e:
+        logger.error(f"⚠️  Error stopping scheduler: {e}")
     
     # Stop Telegram bot
+    application = get_application()
     if application:
         try:
             if getattr(application, "_running", False):
@@ -191,6 +192,10 @@ def create_app() -> FastAPI:
     async def bot_webhook(request: Request) -> Response:
         """Handle Telegram bot webhook requests."""
         try:
+            application = get_application()
+            if not application:
+                return Response(status_code=503, content="Bot not configured")
+            
             # Get the JSON data from Telegram
             data = await request.json()
 

@@ -1,7 +1,8 @@
 """Message handlers for Telegram bot."""
 
 import logging
-from telegram import Update
+import copy
+from telegram import Update, Message
 from telegram.ext import ContextTypes
 
 from app.repositories.user import get_user_repository
@@ -9,8 +10,33 @@ from app.services.conversation_service import get_conversation_service
 from app.services.ai_service import get_ai_service
 from app.bot.intent_processor import get_intent_processor
 from app.bot.response_builder import get_response_builder
+from app.bot.yandex_speech import get_yandex_speech_kit
 
 logger = logging.getLogger(__name__)
+
+
+def create_mock_text_update(voice_update: Update, text: str) -> Update:
+    """Create mock text update from voice update for processing.
+    
+    Args:
+        voice_update: Original update with voice message
+        text: Transcribed text
+        
+    Returns:
+        Mock update with text message
+    """
+    # Create a copy of the update
+    mock_update = copy.copy(voice_update)
+    
+    # Create a copy of the message and set text
+    mock_message = copy.copy(voice_update.message)
+    mock_message.text = text
+    mock_message.voice = None
+    
+    # Set the mock message
+    mock_update.message = mock_message
+    
+    return mock_update
 
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -119,17 +145,79 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle voice messages from users.
+    """Handle voice messages with transcription and processing.
     
     Args:
         update: Telegram update
         context: Bot context
     """
-    user = update.effective_user
-    
-    logger.info(f"Received voice message from user {user.id}")
-    
-    # TODO: Implement voice transcription
-    await update.message.reply_text(
-        "Голосовые сообщения будут поддерживаться после завершения рефакторинга."
-    )
+    try:
+        user = update.effective_user
+        voice = update.message.voice
+        
+        logger.info(f"Received voice message from user {user.id} (duration: {voice.duration}s)")
+        
+        # 1. Send "typing" indicator
+        await context.bot.send_chat_action(
+            chat_id=update.effective_chat.id,
+            action="typing"
+        )
+        
+        # 2. Download voice file
+        try:
+            voice_file = await context.bot.get_file(voice.file_id)
+            audio_bytes = await voice_file.download_as_bytearray()
+            logger.info(f"Downloaded voice file: {len(audio_bytes)} bytes")
+        except Exception as e:
+            logger.error(f"Failed to download voice file: {e}")
+            await update.message.reply_text(
+                "Не удалось скачать голосовое сообщение. Попробуйте еще раз."
+            )
+            return
+        
+        # 3. Transcribe with Yandex SpeechKit
+        try:
+            speech_kit = get_yandex_speech_kit()
+            transcription = await speech_kit.transcribe_audio(bytes(audio_bytes))
+            
+            if not transcription or not transcription.strip():
+                logger.warning("Empty transcription result")
+                await update.message.reply_text(
+                    "Не удалось распознать речь. Попробуйте говорить четче или отправьте текстом."
+                )
+                return
+            
+            logger.info(f"Transcription successful: '{transcription[:50]}...'")
+            
+        except Exception as e:
+            logger.error(f"Transcription failed: {e}")
+            await update.message.reply_text(
+                "Произошла ошибка при распознавании речи. Попробуйте позже."
+            )
+            return
+        
+        # 4. Show transcription to user
+        await update.message.reply_text(
+            f"🎤 Распознано: \"{transcription}\"\n\nОбрабатываю..."
+        )
+        
+        # 5. Process as text message
+        try:
+            mock_update = create_mock_text_update(update, transcription)
+            await handle_text_message(mock_update, context)
+        except Exception as e:
+            logger.error(f"Failed to process transcribed message: {e}")
+            await update.message.reply_text(
+                "Распознал, но не смог обработать. Попробуйте еще раз."
+            )
+        
+    except Exception as e:
+        # Handle any unexpected errors
+        logger.error(f"Voice message processing failed for user {update.effective_user.id}: {e}", exc_info=True)
+        
+        try:
+            await update.message.reply_text(
+                "Произошла ошибка при обработке голосового сообщения. Попробуйте позже."
+            )
+        except Exception as reply_error:
+            logger.error(f"Failed to send error message: {reply_error}")

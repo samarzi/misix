@@ -8,17 +8,10 @@ configure_logging()
 
 logger = get_logger(__name__)
 
-# Import AI functions from bot handlers (legacy)
-# TODO: Migrate to new service layer
-try:
-    from app.bot.handlers import get_ai_response, get_fallback_response
-except ImportError:
-    # Fallback if old handlers not available
-    async def get_ai_response(message, history):
-        return "AI response temporarily unavailable"
-    
-    def get_fallback_response(message):
-        return "Fallback response"
+# Import new service layer
+from app.services.ai_service import get_ai_service
+from app.services.conversation_service import get_conversation_service
+from app.repositories.user import get_user_repository
 from app.shared.config import settings
 from app.shared.supabase import get_supabase_client, supabase_available
 
@@ -220,58 +213,32 @@ def create_app() -> FastAPI:
             if not message or not user_id:
                 return {"error": "Message and user_id required"}
 
-            # Log user message to database
-            if supabase_available():
-                try:
-                    supabase = get_supabase_client()
-                    supabase.table("assistant_messages").insert({
-                        "user_id": user_id,
-                        "role": "user",
-                        "content": message
-                    }).execute()
-                except Exception as log_error:
-                    logger.warning(f"Failed to log user message: {log_error}")
+            # Get conversation service
+            conv_service = get_conversation_service()
+            
+            # Get conversation context
+            conversation_context = await conv_service.get_conversation_context(user_id)
+            
+            # Save user message
+            await conv_service.add_message(
+                user_id=user_id,
+                role="user",
+                content=message
+            )
 
-            # Get conversation history for context
-            conversation_history = []
-            if supabase_available():
-                try:
-                    from app.bot.handlers import get_conversation_history
-                    conversation_history = await get_conversation_history(user_id, limit=20)
-                except Exception as hist_error:
-                    logger.warning(f"Failed to get conversation history: {hist_error}")
-
-            # Get AI response using Yandex GPT with conversation context
-            try:
-                response_message = await get_ai_response(message, conversation_history)
-            except Exception as ai_error:
-                logger.warning(f"AI failed, using fallback: {ai_error}")
-                response_message = get_fallback_response(message)
-
-            # Log assistant response to database
-            if supabase_available():
-                try:
-                    supabase = get_supabase_client()
-                    supabase.table("assistant_messages").insert({
-                        "user_id": user_id,
-                        "role": "assistant",
-                        "content": response_message
-                    }).execute()
-                except Exception as log_error:
-                    logger.warning(f"Failed to log assistant response: {log_error}")
-
-            # Process and save structured data (tasks, notes, finances, etc.)
-            try:
-                from app.bot.handlers import process_and_save_structured_data
-                # Create a mock message object for compatibility
-                class MockMessage:
-                    def __init__(self, text):
-                        self.text = text
-
-                mock_message = MockMessage(message)
-                await process_and_save_structured_data(mock_message, user_id, message)
-            except Exception as struct_error:
-                logger.warning(f"Failed to process structured data: {struct_error}")
+            # Get AI response using new service
+            ai_service = get_ai_service()
+            response_message = await ai_service.generate_response(
+                user_message=message,
+                conversation_context=conversation_context
+            )
+            
+            # Save assistant response
+            await conv_service.add_message(
+                user_id=user_id,
+                role="assistant",
+                content=response_message
+            )
 
             logger.info(f"Generated response: {response_message}")
 

@@ -69,16 +69,27 @@ class ConversationService:
         # Increment message count
         self._message_counts[user_id] = self._message_counts.get(user_id, 0) + 1
         
-        # Store in database
+        # Store in database (only if user_id is a valid UUID)
         if supabase_available():
             try:
-                supabase = get_supabase_client()
-                supabase.table("assistant_messages").insert({
-                    "user_id": user_id,
-                    "role": role,
-                    "content": content,
-                    "telegram_id": telegram_id,
-                }).execute()
+                # Check if user_id is a valid UUID (not a fallback telegram_id string)
+                from uuid import UUID
+                try:
+                    UUID(user_id)
+                    is_valid_uuid = True
+                except (ValueError, AttributeError):
+                    is_valid_uuid = False
+                
+                if is_valid_uuid:
+                    supabase = get_supabase_client()
+                    supabase.table("assistant_messages").insert({
+                        "user_id": user_id,
+                        "role": role,
+                        "content": content,
+                        "telegram_id": telegram_id,
+                    }).execute()
+                else:
+                    logger.debug(f"Skipping DB save - user_id is not a UUID (fallback mode): {user_id}")
             except Exception as e:
                 logger.warning(f"Failed to store message in database: {e}")
         

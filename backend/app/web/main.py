@@ -8,8 +8,17 @@ configure_logging()
 
 logger = get_logger(__name__)
 
-# Import AI functions from bot handlers
-from app.bot.handlers import get_ai_response, get_fallback_response
+# Import AI functions from bot handlers (legacy)
+# TODO: Migrate to new service layer
+try:
+    from app.bot.handlers import get_ai_response, get_fallback_response
+except ImportError:
+    # Fallback if old handlers not available
+    async def get_ai_response(message, history):
+        return "AI response temporarily unavailable"
+    
+    def get_fallback_response(message):
+        return "Fallback response"
 from app.shared.config import settings
 from app.shared.supabase import get_supabase_client, supabase_available
 

@@ -363,7 +363,7 @@ export function validateSchema<T>(
   // Format Zod errors into field-level errors
   const errors: Record<string, string[]> = {};
   
-  result.error.errors.forEach((error) => {
+  result.error.issues.forEach((error: z.ZodIssue) => {
     const path = error.path.join('.');
     if (!errors[path]) {
       errors[path] = [];

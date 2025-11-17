@@ -14,7 +14,12 @@ from app.models.finance import (
     CreateAccountRequest,
     UpdateAccountRequest,
 )
-from app.repositories.finance import FinanceRepository, get_finance_repository
+from app.repositories.finance import (
+    FinanceTransactionRepository,
+    get_transaction_repository,
+    get_category_repository,
+    get_account_repository
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,13 +27,24 @@ logger = logging.getLogger(__name__)
 class FinanceService:
     """Service for finance management business logic."""
     
-    def __init__(self, finance_repo: Optional[FinanceRepository] = None):
+    def __init__(
+        self,
+        transaction_repo: Optional[FinanceTransactionRepository] = None,
+        category_repo: Optional[object] = None,
+        account_repo: Optional[object] = None
+    ):
         """Initialize finance service.
         
         Args:
-            finance_repo: Finance repository (injected for testing)
+            transaction_repo: Transaction repository (injected for testing)
+            category_repo: Category repository (injected for testing)
+            account_repo: Account repository (injected for testing)
         """
-        self.finance_repo = finance_repo or get_finance_repository()
+        self.transaction_repo = transaction_repo or get_transaction_repository()
+        self.category_repo = category_repo or get_category_repository()
+        self.account_repo = account_repo or get_account_repository()
+        # Alias for backward compatibility
+        self.finance_repo = self.transaction_repo
     
     # ========================================================================
     # Transaction Operations

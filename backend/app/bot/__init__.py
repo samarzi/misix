@@ -13,16 +13,31 @@ scheduler = None
 def _create_application():
     """Create and configure Telegram application."""
     if not settings.telegram_bot_token:
+        logger.info("Telegram bot token not configured, skipping bot initialization")
         return None
     
-    # Create application without job_queue to avoid weak reference error in Python 3.13
-    # Job queue functionality is handled by APScheduler instead
-    app = (
-        Application.builder()
-        .token(settings.telegram_bot_token)
-        .job_queue(None)  # Disable job_queue to avoid weak reference error
-        .build()
-    )
+    try:
+        # Create application without job_queue to avoid weak reference error in Python 3.13
+        # Job queue functionality is handled by APScheduler instead
+        app = (
+            Application.builder()
+            .token(settings.telegram_bot_token)
+            .job_queue(None)  # Disable job_queue to avoid weak reference error
+            .build()
+        )
+        logger.info("Telegram application created successfully")
+        return app
+    except TypeError as e:
+        if "weak reference" in str(e):
+            logger.error(
+                "Failed to create Telegram application due to Python 3.13 compatibility issue. "
+                "Bot functionality will be disabled. Error: %s", e
+            )
+            return None
+        raise
+    
+    if not app:
+        return None
     
     # Import handlers
     from .handlers.command import (

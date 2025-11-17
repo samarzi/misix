@@ -15,8 +15,14 @@ def _create_application():
     if not settings.telegram_bot_token:
         return None
     
-    # Create application
-    app = Application.builder().token(settings.telegram_bot_token).build()
+    # Create application without job_queue to avoid weak reference error in Python 3.13
+    # Job queue functionality is handled by APScheduler instead
+    app = (
+        Application.builder()
+        .token(settings.telegram_bot_token)
+        .job_queue(None)  # Disable job_queue to avoid weak reference error
+        .build()
+    )
     
     # Import handlers
     from .handlers.command import (

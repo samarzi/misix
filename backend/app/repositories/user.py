@@ -101,6 +101,41 @@ class UserRepository(BaseRepository):
             Updated user data
         """
         return await self.update(user_id, {"email_verified": True})
+    
+    async def get_or_create_by_telegram_id(
+        self,
+        telegram_id: int,
+        username: Optional[str] = None,
+        first_name: Optional[str] = None,
+        last_name: Optional[str] = None
+    ) -> dict:
+        """Get existing user or create new one by Telegram ID.
+        
+        Args:
+            telegram_id: Telegram user ID
+            username: Optional Telegram username
+            first_name: Optional first name
+            last_name: Optional last name
+            
+        Returns:
+            User data (existing or newly created)
+        """
+        # Try to get existing user
+        user = await self.get_by_telegram_id(telegram_id)
+        if user:
+            logger.info(f"Found existing user for telegram_id {telegram_id}")
+            return user
+        
+        # Create new user
+        logger.info(f"Creating new user for telegram_id {telegram_id}")
+        user_data = {
+            "telegram_id": telegram_id,
+            "username": username,
+            "first_name": first_name,
+            "last_name": last_name,
+        }
+        
+        return await self.create(user_data)
 
 
 def get_user_repository() -> UserRepository:

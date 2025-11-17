@@ -1,0 +1,284 @@
+"""AI service for Yandex GPT integration."""
+
+import logging
+from typing import Optional
+
+from app.bot.yandex_gpt import YandexGPTClient, YandexGPTConfigurationError, get_yandex_gpt_client
+from app.core.exceptions import ExternalServiceError
+
+logger = logging.getLogger(__name__)
+
+# Fallback responses when AI is unavailable
+FALLBACK_RESPONSES = [
+    "Извините, сейчас я не могу обработать ваш запрос. Попробуйте позже.",
+    "Временные технические неполадки. Пожалуйста, повторите запрос через минуту.",
+    "Не удалось получить ответ от AI. Проверьте подключение и попробуйте снова.",
+]
+
+
+class AIService:
+    """Service for AI-powered responses and text processing."""
+    
+    def __init__(self, gpt_client: Optional[YandexGPTClient] = None):
+        """Initialize AI service.
+        
+        Args:
+            gpt_client: Yandex GPT client (injected for testing)
+        """
+        try:
+            self.gpt_client = gpt_client or get_yandex_gpt_client()
+            self.available = True
+        except YandexGPTConfigurationError as e:
+            logger.warning(f"Yandex GPT not configured: {e}")
+            self.gpt_client = None
+            self.available = False
+    
+    async def generate_response(
+        self,
+        user_message: str,
+        conversation_context: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+    ) -> str:
+        """Generate AI response to user message.
+        
+        Args:
+            user_message: User's message
+            conversation_context: Optional conversation history
+            system_prompt: Optional system prompt (persona)
+            
+        Returns:
+            AI-generated response
+            
+        Raises:
+            ExternalServiceError: If AI service fails
+        """
+        if not self.available or not self.gpt_client:
+            return self._get_fallback_response(user_message)
+        
+        try:
+            # Build messages for AI
+            messages = []
+            
+            # Add system prompt
+            if system_prompt:
+                messages.append({
+                    "role": "system",
+                    "text": system_prompt,
+                })
+            else:
+                messages.append({
+                    "role": "system",
+                    "text": self._get_default_system_prompt(),
+                })
+            
+            # Add conversation context if available
+            if conversation_context:
+                messages.append({
+                    "role": "system",
+                    "text": f"Context from previous conversation:\n{conversation_context}",
+                })
+            
+            # Add user message
+            messages.append({
+                "role": "user",
+                "text": user_message,
+            })
+            
+            # Get response from Yandex GPT
+            response = await self.gpt_client.chat(
+                messages=messages,
+                temperature=0.7,
+                max_tokens=1024,
+            )
+            
+            logger.info(f"Generated AI response (length: {len(response)})")
+            return response
+            
+        except Exception as e:
+            logger.error(f"AI response generation failed: {e}")
+            return self._get_fallback_response(user_message)
+    
+    async def classify_intent(self, user_message: str) -> dict:
+        """Classify user intent from message.
+        
+        This helps determine what action the user wants to perform
+        (create task, add expense, save note, etc.)
+        
+        Args:
+            user_message: User's message
+            
+        Returns:
+            Dictionary with intent classification
+        """
+        if not self.available or not self.gpt_client:
+            return {"intent": "unknown", "confidence": 0.0}
+        
+        try:
+            prompt = f"""
+Analyze this user message and classify the intent:
+"{user_message}"
+
+Possible intents:
+- create_task: User wants to create a task or reminder
+- add_expense: User is reporting an expense
+- add_income: User is reporting income
+- save_note: User wants to save a note or information
+- ask_question: User is asking a question
+- general_chat: General conversation
+
+Respond with JSON: {{"intent": "...", "confidence": 0.0-1.0}}
+"""
+            
+            messages = [
+                {"role": "system", "text": "You are an intent classifier. Respond only with JSON."},
+                {"role": "user", "text": prompt},
+            ]
+            
+            response = await self.gpt_client.chat(
+                messages=messages,
+                temperature=0.3,
+                max_tokens=100,
+            )
+            
+            # Parse JSON response
+            import json
+            try:
+                result = json.loads(response)
+                return result
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse intent classification: {response}")
+                return {"intent": "unknown", "confidence": 0.0}
+            
+        except Exception as e:
+            logger.error(f"Intent classification failed: {e}")
+            return {"intent": "unknown", "confidence": 0.0}
+    
+    async def extract_structured_data(
+        self,
+        user_message: str,
+        data_type: str,
+    ) -> Optional[dict]:
+        """Extract structured data from user message.
+        
+        Args:
+            user_message: User's message
+            data_type: Type of data to extract (task, expense, note)
+            
+        Returns:
+            Extracted data or None
+        """
+        if not self.available or not self.gpt_client:
+            return None
+        
+        try:
+            prompts = {
+                "task": """
+Extract task information from this message:
+"{message}"
+
+Respond with JSON: {{"title": "...", "deadline": "YYYY-MM-DD or null", "priority": "low/medium/high"}}
+""",
+                "expense": """
+Extract expense information from this message:
+"{message}"
+
+Respond with JSON: {{"amount": 0.0, "category": "...", "description": "..."}}
+""",
+                "note": """
+Extract note information from this message:
+"{message}"
+
+Respond with JSON: {{"title": "...", "content": "..."}}
+""",
+            }
+            
+            if data_type not in prompts:
+                return None
+            
+            prompt = prompts[data_type].format(message=user_message)
+            
+            messages = [
+                {"role": "system", "text": "You are a data extractor. Respond only with JSON."},
+                {"role": "user", "text": prompt},
+            ]
+            
+            response = await self.gpt_client.chat(
+                messages=messages,
+                temperature=0.3,
+                max_tokens=200,
+            )
+            
+            # Parse JSON response
+            import json
+            try:
+                result = json.loads(response)
+                return result
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse extracted data: {response}")
+                return None
+            
+        except Exception as e:
+            logger.error(f"Data extraction failed: {e}")
+            return None
+    
+    def _get_default_system_prompt(self) -> str:
+        """Get default system prompt for AI.
+        
+        Returns:
+            System prompt text
+        """
+        return """
+Ты - MISIX, персональный AI-ассистент пользователя.
+
+Твоя задача:
+- Помогать пользователю управлять задачами, финансами и заметками
+- Отвечать дружелюбно и по существу
+- Быть кратким, но информативным
+- Использовать эмодзи для наглядности
+
+Ты можешь:
+- Создавать задачи и напоминания
+- Записывать расходы и доходы
+- Сохранять заметки
+- Отвечать на вопросы
+- Вести дружескую беседу
+
+Отвечай на русском языке.
+"""
+    
+    def _get_fallback_response(self, user_message: str) -> str:
+        """Get fallback response when AI is unavailable.
+        
+        Args:
+            user_message: User's message
+            
+        Returns:
+            Fallback response
+        """
+        # Simple keyword-based responses
+        message_lower = user_message.lower()
+        
+        if any(word in message_lower for word in ["привет", "здравствуй", "hi", "hello"]):
+            return "Привет! 👋 Как я могу помочь?"
+        
+        if any(word in message_lower for word in ["спасибо", "благодарю", "thanks"]):
+            return "Пожалуйста! Рад помочь! 😊"
+        
+        if any(word in message_lower for word in ["помощь", "help", "что ты умеешь"]):
+            return """
+Я могу помочь вам с:
+📝 Задачами и напоминаниями
+💰 Финансами и расходами
+📓 Заметками и записями
+
+Просто напишите, что вам нужно!
+"""
+        
+        # Default fallback
+        import random
+        return random.choice(FALLBACK_RESPONSES)
+
+
+def get_ai_service() -> AIService:
+    """Get AI service instance."""
+    return AIService()

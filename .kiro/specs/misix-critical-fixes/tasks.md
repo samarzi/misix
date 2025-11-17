@@ -1,0 +1,420 @@
+# Implementation Plan: MISIX Critical Fixes and Refactoring
+
+## Phase 1: Security Foundation (Critical Priority)
+
+- [x] 1. Implement Authentication System
+  - [x] 1.1 Create secure configuration module with Pydantic validation
+    - Create `backend/app/core/config.py` with Settings class
+    - Add validators for all required environment variables
+    - Remove all hardcoded default values for secrets
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
+  - [x] 1.2 Implement password hashing utilities
+    - Create `backend/app/core/security.py` with bcrypt functions
+    - Implement `hash_password()` and `verify_password()` functions
+    - Add password strength validation
+    - _Requirements: 1.1_
+  - [x] 1.3 Implement JWT token generation and validation
+    - Add JWT encode/decode functions in `security.py`
+    - Implement token expiration logic
+    - Create refresh token mechanism
+    - _Requirements: 1.2, 1.3_
+  - [x] 1.4 Create authentication Pydantic models
+    - Create `backend/app/models/auth.py` with RegisterRequest, LoginRequest, TokenResponse
+    - Add email and password validation
+    - _Requirements: 1.1, 5.1_
+  - [x] 1.5 Implement AuthService with business logic
+    - Create `backend/app/services/auth_service.py`
+    - Implement register(), login(), verify_token() methods
+    - Add user existence checks and error handling
+    - _Requirements: 1.1, 1.2, 1.3_
+  - [x] 1.6 Create authentication API endpoints
+    - Create `backend/app/api/routers/auth.py`
+    - Implement POST /api/auth/register endpoint
+    - Implement POST /api/auth/login endpoint
+    - Implement POST /api/auth/refresh endpoint
+    - _Requirements: 1.1, 1.2, 1.3_
+  - [x] 1.7 Implement JWT authentication middleware
+    - Create `backend/app/middleware/auth.py`
+    - Extract and validate JWT from Authorization header
+    - Attach user_id to request.state
+    - Handle authentication errors
+    - _Requirements: 1.3, 1.4_
+  - [x] 1.8 Apply authentication middleware to protected endpoints
+    - Add dependency injection for current_user
+    - Protect all API endpoints except auth and health
+    - Update existing endpoints to use authenticated user_id
+    - _Requirements: 1.3, 1.4_
+
+- [x] 2. Implement Input Validation and Security
+  - [x] 2.1 Create Pydantic models for all API requests
+    - Create `backend/app/models/task.py` with CreateTaskRequest, UpdateTaskRequest
+    - Create `backend/app/models/finance.py` with transaction models
+    - Create `backend/app/models/note.py` with note models
+    - Add field validators for all models
+    - _Requirements: 5.1, 5.4, 12.1_
+  - [x] 2.2 Implement file upload validation
+    - Create `backend/app/core/validators.py`
+    - Add file type validation (whitelist approach)
+    - Add file size validation (max 10MB)
+    - Add content validation for images
+    - _Requirements: 5.2, 5.3, 10.4_
+  - [x] 2.3 Create Zod schemas for frontend validation
+    - Create `frontend/src/lib/validation/schemas.ts`
+    - Add schemas for all forms (auth, tasks, finances, notes)
+    - Implement custom validators
+    - _Requirements: 5.5_
+  - [x] 2.4 Implement rate limiting middleware
+    - Create `backend/app/middleware/rate_limit.py`
+    - Use Redis for distributed rate limiting
+    - Configure limits per endpoint (stricter for auth)
+    - _Requirements: 10.1_
+  - [x] 2.5 Implement CORS configuration
+    - Update CORS middleware in main.py
+    - Remove wildcard origins
+    - Add explicit allowed origins from config
+    - _Requirements: 10.3_
+
+- [x] 3. Implement Error Handling System
+  - [x] 3.1 Create custom exception classes
+    - Create `backend/app/core/exceptions.py`
+    - Define AppException, AuthenticationError, ValidationError, NotFoundError
+    - Add status codes and error messages
+    - _Requirements: 6.2_
+  - [x] 3.2 Implement global error handler middleware
+    - Create `backend/app/middleware/error_handler.py`
+    - Handle all custom exceptions
+    - Format error responses consistently
+    - Add request_id to error responses
+    - _Requirements: 6.4_
+  - [x] 3.3 Implement structured logging
+    - Create `backend/app/core/logging.py`
+    - Configure structured logging with JSON format
+    - Add correlation IDs to all logs
+    - Implement log levels (DEBUG, INFO, WARNING, ERROR)
+    - _Requirements: 6.3, 6.5, 13.4_
+  - [x] 3.4 Replace broad exception catches
+    - Update all `except Exception` to specific exceptions
+    - Add proper error context to logs
+    - Ensure user-friendly error messages
+    - _Requirements: 6.1, 6.3_
+
+## Phase 2: Backend Refactoring
+
+- [x] 4. Refactor Backend Architecture
+  - [x] 4.1 Create repository layer
+    - Create `backend/app/repositories/base.py` with BaseRepository
+    - Create `backend/app/repositories/user.py` with UserRepository
+    - Create `backend/app/repositories/task.py` with TaskRepository
+    - Create `backend/app/repositories/finance.py` with FinanceRepository
+    - Implement CRUD operations with proper error handling
+    - _Requirements: 3.4, 3.5_
+  - [x] 4.2 Create service layer
+    - Create `backend/app/services/task_service.py` with TaskService
+    - Create `backend/app/services/finance_service.py` with FinanceService
+    - Create `backend/app/services/note_service.py` with NoteService
+    - Move business logic from handlers to services
+    - _Requirements: 3.4, 3.5_
+  - [x] 4.3 Split handlers.py into domain modules
+    - Create `backend/app/bot/handlers/message.py` for message handling
+    - Create `backend/app/bot/handlers/sleep.py` for sleep tracking
+    - Create `backend/app/bot/handlers/command.py` for bot commands
+    - Move conversation logic to ConversationService
+    - _Requirements: 3.1, 3.2, 3.3_
+  - [x] 4.4 Implement ConversationService
+    - Create `backend/app/services/conversation_service.py`
+    - Move conversation buffer logic from global variables
+    - Implement Redis-based conversation storage
+    - Add TTL-based cleanup
+    - _Requirements: 3.5, 11.1, 11.2, 11.4_
+  - [x] 4.5 Implement AIService
+    - Create `backend/app/services/ai_service.py`
+    - Move Yandex GPT integration logic
+    - Add retry logic and error handling
+    - Implement response caching
+    - _Requirements: 3.5_
+  - [x] 4.6 Update API routers to use services
+    - Update `backend/app/api/routers/tasks.py` to use TaskService
+    - Update `backend/app/api/routers/finances.py` to use FinanceService
+    - Update `backend/app/api/routers/notes.py` to use NoteService
+    - Remove direct database access from routers
+    - _Requirements: 3.4, 3.5_
+
+- [ ] 5. Implement Database Optimizations
+  - [ ] 5.1 Add eager loading for related data
+    - Update repository methods to use joins
+    - Implement select_related for foreign keys
+    - Avoid N+1 query problems
+    - _Requirements: 7.1_
+  - [ ] 5.2 Implement pagination
+    - Create `backend/app/models/pagination.py` with Pagination model
+    - Add pagination to all list endpoints
+    - Implement cursor-based pagination for large datasets
+    - _Requirements: 7.2_
+  - [x] 5.3 Implement Redis caching
+    - Set up Redis connection in config
+    - Create `backend/app/core/cache.py` with caching utilities
+    - Cache user sessions and frequently accessed data
+    - Implement cache invalidation on updates
+    - _Requirements: 7.4, 11.4_
+  - [ ] 5.4 Optimize database queries
+    - Review and optimize slow queries
+    - Add database indexes for frequently queried fields
+    - Implement query result limiting
+    - _Requirements: 7.3, 7.5_
+
+## Phase 3: Frontend Refactoring
+
+- [ ] 6. Refactor Frontend Architecture
+  - [ ] 6.1 Implement authentication on frontend
+    - Create `frontend/src/features/auth/` directory structure
+    - Create LoginForm and RegisterForm components
+    - Implement useAuth hook for auth state management
+    - Create authStore with Zustand
+    - _Requirements: 4.1, 4.2_
+  - [ ] 6.2 Update API client with JWT support
+    - Update `frontend/src/lib/api/client.ts` to include JWT token
+    - Implement request interceptor to add Authorization header
+    - Implement response interceptor to handle 401 errors
+    - Add token refresh logic
+    - _Requirements: 4.1, 4.2_
+  - [ ] 6.3 Split DashboardPage into separate pages
+    - Create `frontend/src/pages/AnalyticsPage.tsx`
+    - Create `frontend/src/pages/TasksPage.tsx`
+    - Create `frontend/src/pages/FinancesPage.tsx`
+    - Create `frontend/src/pages/NotesPage.tsx`
+    - Create `frontend/src/pages/RemindersPage.tsx`
+    - Create `frontend/src/pages/PersonalPage.tsx`
+    - _Requirements: 4.1, 4.2_
+  - [ ] 6.4 Create custom hooks for business logic
+    - Create `frontend/src/features/tasks/hooks/useTasks.ts`
+    - Create `frontend/src/features/finances/hooks/useFinances.ts`
+    - Create `frontend/src/features/notes/hooks/useNotes.ts`
+    - Extract form handling logic into useForm hooks
+    - _Requirements: 4.3, 4.4_
+  - [ ] 6.5 Create reusable form components
+    - Create generic Form component with validation
+    - Create reusable Input, Select, TextArea components
+    - Implement form error display
+    - Add loading states
+    - _Requirements: 4.4_
+  - [ ] 6.6 Implement routing
+    - Set up React Router
+    - Create protected routes requiring authentication
+    - Implement navigation between pages
+    - Add breadcrumbs
+    - _Requirements: 4.1, 4.2_
+
+## Phase 4: Testing and Documentation
+
+- [ ] 7. Implement Backend Testing
+  - [x] 7.1 Set up testing infrastructure
+    - Install pytest and dependencies
+    - Create `backend/tests/conftest.py` with fixtures
+    - Set up test database
+    - Configure test environment variables
+    - _Requirements: 9.4_
+  - [ ] 7.2 Write unit tests for services
+    - Create `backend/tests/unit/test_auth_service.py`
+    - Create `backend/tests/unit/test_task_service.py`
+    - Create `backend/tests/unit/test_finance_service.py`
+    - Mock repository dependencies
+    - _Requirements: 9.1, 9.3_
+  - [ ] 7.3 Write integration tests for API endpoints
+    - Create `backend/tests/integration/test_auth_api.py`
+    - Create `backend/tests/integration/test_task_api.py`
+    - Create `backend/tests/integration/test_finance_api.py`
+    - Test authentication flows
+    - _Requirements: 9.2, 9.3_
+  - [ ]* 7.4 Write tests for edge cases and error handling
+    - Test validation errors
+    - Test authentication failures
+    - Test rate limiting
+    - Test concurrent requests
+    - _Requirements: 9.1, 9.2_
+
+- [ ] 8. Implement Frontend Testing
+  - [ ] 8.1 Set up testing infrastructure
+    - Install vitest and testing-library
+    - Create test utilities and helpers
+    - Configure test environment
+    - _Requirements: 9.4_
+  - [ ] 8.2 Write component tests
+    - Test LoginForm validation
+    - Test TaskForm submission
+    - Test error display
+    - Test loading states
+    - _Requirements: 9.1, 9.3_
+  - [ ]* 8.3 Write integration tests
+    - Test authentication flow
+    - Test task creation flow
+    - Test API error handling
+    - _Requirements: 9.2, 9.3_
+
+- [ ] 9. Create API Documentation
+  - [ ] 9.1 Configure OpenAPI/Swagger
+    - Enable FastAPI automatic docs
+    - Add descriptions to all endpoints
+    - Document request/response schemas
+    - _Requirements: 8.1, 8.2_
+  - [ ] 9.2 Add API examples
+    - Add example requests for each endpoint
+    - Add example responses
+    - Document error responses
+    - _Requirements: 8.3_
+  - [ ] 9.3 Document authentication
+    - Document JWT token format
+    - Document authentication flow
+    - Add authentication examples
+    - _Requirements: 8.4_
+  - [ ] 9.4 Create API documentation page
+    - Serve Swagger UI at /docs
+    - Serve ReDoc at /redoc
+    - Add custom branding
+    - _Requirements: 8.5_
+
+- [ ] 10. Create Development Documentation
+  - [ ] 10.1 Update README with setup instructions
+    - Document prerequisites
+    - Add step-by-step setup guide
+    - Document environment variables
+    - Add troubleshooting section
+    - _Requirements: 15.1, 15.2_
+  - [ ] 10.2 Create architecture documentation
+    - Document system architecture
+    - Create architecture diagrams
+    - Document design decisions
+    - _Requirements: 15.3_
+  - [ ] 10.3 Document coding standards
+    - Document code style guidelines
+    - Document naming conventions
+    - Document commit message format
+    - _Requirements: 15.4_
+  - [ ] 10.4 Create contribution guidelines
+    - Document how to contribute
+    - Document PR process
+    - Document testing requirements
+    - _Requirements: 15.5_
+
+## Phase 5: Monitoring and Optimization
+
+- [ ] 11. Implement Monitoring and Observability
+  - [ ] 11.1 Implement request logging middleware
+    - Create `backend/app/middleware/logging.py`
+    - Log all requests with duration, status, user_id
+    - Add correlation IDs
+    - _Requirements: 13.1, 13.4_
+  - [ ] 11.2 Implement health check endpoints
+    - Create comprehensive health check
+    - Check database connectivity
+    - Check Redis connectivity
+    - Check external API connectivity
+    - _Requirements: 13.2_
+  - [ ] 11.3 Implement error tracking
+    - Track error rates by endpoint
+    - Log error details with context
+    - Set up error alerting
+    - _Requirements: 13.3_
+  - [ ] 11.4 Implement metrics endpoints
+    - Expose Prometheus metrics
+    - Track request counts and durations
+    - Track error rates
+    - _Requirements: 13.5_
+
+- [ ] 12. Implement CI/CD Pipeline
+  - [ ] 12.1 Set up GitHub Actions
+    - Create workflow for linting
+    - Create workflow for testing
+    - Create workflow for building
+    - _Requirements: 14.1, 14.2_
+  - [ ] 12.2 Configure automated testing
+    - Run tests on every PR
+    - Prevent merging if tests fail
+    - Generate coverage reports
+    - _Requirements: 14.2, 14.3_
+  - [ ] 12.3 Set up deployment pipeline
+    - Configure staging deployment
+    - Configure production deployment
+    - Implement manual approval for production
+    - _Requirements: 14.4, 14.5_
+  - [ ]* 12.4 Set up monitoring and alerting
+    - Configure error alerting
+    - Configure performance monitoring
+    - Set up uptime monitoring
+    - _Requirements: 13.2, 13.3_
+
+- [ ] 13. Performance Optimization
+  - [ ] 13.1 Optimize API response times
+    - Implement response compression
+    - Minimize payload sizes
+    - Implement field selection
+    - _Requirements: 7.1, 7.2, 7.4_
+  - [ ] 13.2 Optimize database queries
+    - Review slow query logs
+    - Add missing indexes
+    - Optimize complex queries
+    - _Requirements: 7.1, 7.3_
+  - [ ] 13.3 Implement caching strategy
+    - Cache user sessions
+    - Cache frequently accessed data
+    - Implement cache warming
+    - _Requirements: 7.4, 11.4_
+  - [ ]* 13.4 Perform load testing
+    - Test API under load
+    - Identify bottlenecks
+    - Optimize based on results
+    - _Requirements: 7.1, 7.2_
+
+## Phase 6: Security Hardening
+
+- [ ] 14. Implement Additional Security Measures
+  - [ ] 14.1 Implement data encryption at rest
+    - Encrypt sensitive personal entries
+    - Encrypt passwords in personal data
+    - Use Supabase encryption features
+    - _Requirements: 10.2_
+  - [ ] 14.2 Implement security headers
+    - Add HSTS header
+    - Add CSP header
+    - Add X-Frame-Options
+    - Add X-Content-Type-Options
+    - _Requirements: 10.5_
+  - [ ] 14.3 Implement audit logging
+    - Log all authentication attempts
+    - Log all data modifications
+    - Log all permission changes
+    - _Requirements: 13.1_
+  - [ ]* 14.4 Perform security audit
+    - Review all endpoints for vulnerabilities
+    - Test authentication and authorization
+    - Test input validation
+    - Test rate limiting
+    - _Requirements: 10.1, 10.2, 10.3, 10.4_
+
+## Phase 7: Migration and Deployment
+
+- [ ] 15. Prepare for Production Deployment
+  - [ ] 15.1 Create database migration scripts
+    - Create migration for new auth tables
+    - Create migration for indexes
+    - Test migrations on staging
+    - _Requirements: 1.1_
+  - [ ] 15.2 Update deployment configuration
+    - Configure environment variables
+    - Set up Redis instance
+    - Configure HTTPS
+    - _Requirements: 10.5_
+  - [ ] 15.3 Create rollback procedures
+    - Document rollback steps
+    - Create rollback scripts
+    - Test rollback on staging
+    - _Requirements: Migration Strategy_
+  - [ ] 15.4 Perform staging deployment
+    - Deploy to staging environment
+    - Run smoke tests
+    - Monitor for errors
+    - _Requirements: 14.4_
+  - [ ] 15.5 Perform production deployment
+    - Deploy to production with feature flags
+    - Monitor error rates
+    - Gradually roll out to users
+    - _Requirements: 14.5_

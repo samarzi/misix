@@ -1,7 +1,12 @@
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-import logging
 from telegram import Update
+
+# Configure logging first
+from app.core.logging import configure_logging, get_logger
+configure_logging()
+
+logger = get_logger(__name__)
 
 # Import AI functions from bot handlers
 from app.bot.handlers import get_ai_response, get_fallback_response
@@ -11,7 +16,10 @@ from app.shared.supabase import get_supabase_client, supabase_available
 # Import Telegram bot application
 from app.bot import application
 
-# Import API routers
+# Import new auth router
+from app.api.routers.auth import router as new_auth_router
+
+# Import API routers (legacy)
 from .routers import (
     auth_router,
     notes_router,
@@ -23,38 +31,81 @@ from .routers import (
     dashboard_router,
 )
 
-logger = logging.getLogger(__name__)
-
 def create_app() -> FastAPI:
-    app = FastAPI(title="MISIX Backend", version="0.1.0")
-
-    # Add CORS middleware for frontend
-    default_origins = [
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "http://localhost:8080",
-        "https://misix.netlify.app",
-    ]
-    configured_origins = settings.frontend_allowed_origins or []
-    allowed_origins = [
-        origin
-        for origin in default_origins + configured_origins
-        if origin
-    ]
-
-    # Extra safety net for Netlify deploy previews and subdomains
-    netlify_origin_regex = r"https://[\w.-]*netlify\.app"
-
-    logger.info("Configured CORS origins: %s", allowed_origins)
-
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=list(dict.fromkeys(allowed_origins)),  # Preserve order, remove duplicates
-        allow_origin_regex=netlify_origin_regex,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+    app = FastAPI(
+        title="MISIX Backend",
+        version="1.0.0",
+        description="AI Personal Assistant API",
+        docs_url="/docs" if not settings.is_production else None,  # Disable docs in production
+        redoc_url="/redoc" if not settings.is_production else None,
     )
+
+    # ========================================================================
+    # CORS Configuration (Secure)
+    # ========================================================================
+    
+    # Get allowed origins from configuration
+    allowed_origins = settings.get_cors_origins()
+    
+    # In production, never allow wildcard
+    if settings.is_production and "*" in allowed_origins:
+        logger.error("Wildcard CORS origin not allowed in production!")
+        raise ValueError("Wildcard CORS origin not allowed in production")
+    
+    # Log CORS configuration
+    logger.info(f"Environment: {settings.environment}")
+    logger.info(f"CORS allowed origins: {allowed_origins}")
+    
+    # Configure CORS middleware
+    cors_config = {
+        "allow_origins": allowed_origins,
+        "allow_credentials": True,
+        "allow_methods": ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+        "allow_headers": [
+            "Authorization",
+            "Content-Type",
+            "Accept",
+            "Origin",
+            "User-Agent",
+            "DNT",
+            "Cache-Control",
+            "X-Requested-With",
+        ],
+        "expose_headers": [
+            "X-RateLimit-Limit",
+            "X-RateLimit-Remaining",
+            "X-RateLimit-Reset",
+            "Retry-After",
+        ],
+        "max_age": 600,  # Cache preflight requests for 10 minutes
+    }
+    
+    # Add origin regex for Netlify deploy previews (only in non-production)
+    if not settings.is_production:
+        cors_config["allow_origin_regex"] = r"https://[\w.-]*netlify\.app"
+    
+    app.add_middleware(CORSMiddleware, **cors_config)
+    
+    # ========================================================================
+    # Request Logging Middleware
+    # ========================================================================
+    
+    from app.middleware.logging import RequestLoggingMiddleware
+    app.add_middleware(RequestLoggingMiddleware)
+    
+    # ========================================================================
+    # Rate Limiting Middleware
+    # ========================================================================
+    
+    from app.middleware.rate_limit import RateLimitMiddleware
+    app.add_middleware(RateLimitMiddleware)
+    
+    # ========================================================================
+    # Error Handlers
+    # ========================================================================
+    
+    from app.middleware.error_handler import register_exception_handlers
+    register_exception_handlers(app)
 
     @app.get("/health", tags=["system"])
     async def health_check() -> dict[str, str]:
@@ -249,8 +300,11 @@ def create_app() -> FastAPI:
             logger.error(f"Get messages API error: {e}")
             return {"error": "Failed to get messages"}
 
-    # Authentication
-    app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+    # Authentication (New secure implementation)
+    app.include_router(new_auth_router, prefix="/api/v2/auth", tags=["auth-v2"])
+    
+    # Authentication (Legacy - will be deprecated)
+    app.include_router(auth_router, prefix="/api/auth", tags=["auth-legacy"])
 
     # Web API endpoints
     app.include_router(notes_router, prefix="/api", tags=["notes"])

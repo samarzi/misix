@@ -223,3 +223,87 @@ class BaseRepository(Generic[T]):
         """
         record = await self.get_by_id(record_id)
         return record is not None
+    
+    async def get_with_relations(
+        self,
+        record_id: str | UUID,
+        relations: list[str]
+    ) -> Optional[dict]:
+        """Get record with related data (eager loading).
+        
+        Args:
+            record_id: Record ID
+            relations: List of relation names to load
+            
+        Returns:
+            Record with related data or None
+        """
+        try:
+            supabase = self._get_client()
+            
+            # Build select string with relations
+            select_str = "*"
+            if relations:
+                relation_str = ",".join(relations)
+                select_str = f"*,{relation_str}(*)"
+            
+            result = (
+                supabase.table(self.table_name)
+                .select(select_str)
+                .eq("id", str(record_id))
+                .execute()
+            )
+            
+            if not result.data:
+                return None
+            
+            return result.data[0]
+        except Exception as e:
+            logger.error(f"Get with relations failed in {self.table_name}: {e}")
+            return None
+    
+    async def get_by_user_id_with_relations(
+        self,
+        user_id: str | UUID,
+        relations: list[str],
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ) -> list[dict]:
+        """Get records by user ID with related data (eager loading).
+        
+        Args:
+            user_id: User ID
+            relations: List of relation names to load
+            limit: Maximum number of records
+            offset: Number of records to skip
+            
+        Returns:
+            List of records with related data
+        """
+        try:
+            supabase = self._get_client()
+            
+            # Build select string with relations
+            select_str = "*"
+            if relations:
+                relation_str = ",".join(relations)
+                select_str = f"*,{relation_str}(*)"
+            
+            query = (
+                supabase.table(self.table_name)
+                .select(select_str)
+                .eq("user_id", str(user_id))
+                .order("created_at", desc=True)
+            )
+            
+            if limit:
+                query = query.limit(limit)
+            
+            if offset:
+                query = query.offset(offset)
+            
+            result = query.execute()
+            return result.data or []
+        except Exception as e:
+            logger.error(f"Get by user ID with relations failed in {self.table_name}: {e}")
+            return []

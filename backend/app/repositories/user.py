@@ -136,6 +136,26 @@ class UserRepository(BaseRepository):
         }
         
         return await self.create(user_data)
+    
+    async def get_all_with_telegram(self) -> list[dict]:
+        """Get all users who have Telegram ID.
+        
+        Returns:
+            List of users with telegram_id
+        """
+        try:
+            supabase = self._get_client()
+            result = (
+                supabase.table(self.table_name)
+                .select("*")
+                .not_.is_("telegram_id", "null")
+                .execute()
+            )
+            
+            return result.data or []
+        except Exception as e:
+            logger.error(f"Get all with telegram failed: {e}")
+            return []
 
 
 def get_user_repository() -> UserRepository:

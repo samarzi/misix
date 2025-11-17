@@ -140,12 +140,12 @@
     - _Requirements: 3.4, 3.5_
 
 - [ ] 5. Implement Database Optimizations
-  - [ ] 5.1 Add eager loading for related data
+  - [x] 5.1 Add eager loading for related data
     - Update repository methods to use joins
     - Implement select_related for foreign keys
     - Avoid N+1 query problems
     - _Requirements: 7.1_
-  - [ ] 5.2 Implement pagination
+  - [x] 5.2 Implement pagination
     - Create `backend/app/models/pagination.py` with Pagination model
     - Add pagination to all list endpoints
     - Implement cursor-based pagination for large datasets
@@ -156,7 +156,7 @@
     - Cache user sessions and frequently accessed data
     - Implement cache invalidation on updates
     - _Requirements: 7.4, 11.4_
-  - [ ] 5.4 Optimize database queries
+  - [x] 5.4 Optimize database queries
     - Review and optimize slow queries
     - Add database indexes for frequently queried fields
     - Implement query result limiting

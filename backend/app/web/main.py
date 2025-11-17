@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from telegram import Update
@@ -16,7 +17,7 @@ from app.shared.config import settings
 from app.shared.supabase import get_supabase_client, supabase_available
 
 # Import Telegram bot application
-from app.bot import application
+from app.bot import application, start_bot_with_scheduler, stop_bot_with_scheduler
 
 # Import new auth router
 from app.api.routers.auth import router as new_auth_router
@@ -33,6 +34,72 @@ from .routers import (
     dashboard_router,
 )
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifecycle with proper startup and shutdown."""
+    # ========================================================================
+    # STARTUP
+    # ========================================================================
+    logger.info("🚀 Starting MISIX application...")
+    
+    # Start Telegram bot
+    if application:
+        try:
+            if not getattr(application, "_initialized", False):
+                await application.initialize()
+                logger.info("✅ Telegram bot initialized")
+            
+            if not getattr(application, "_running", False):
+                await application.start()
+                logger.info("✅ Telegram bot started")
+            
+            # Start scheduler for reminders
+            try:
+                start_bot_with_scheduler()
+                logger.info("✅ Scheduler started successfully")
+            except Exception as e:
+                logger.error(f"⚠️  Failed to start scheduler: {e}", exc_info=True)
+                logger.warning("Continuing without scheduler - reminders will not work")
+        
+        except Exception as e:
+            logger.error(f"❌ Failed to start Telegram bot: {e}", exc_info=True)
+            logger.warning("Continuing without Telegram bot")
+    else:
+        logger.info("ℹ️  Telegram bot not configured (TELEGRAM_BOT_TOKEN not set)")
+    
+    logger.info("✅ MISIX application started successfully")
+    
+    yield
+    
+    # ========================================================================
+    # SHUTDOWN
+    # ========================================================================
+    logger.info("🛑 Shutting down MISIX application...")
+    
+    # Stop scheduler
+    if application:
+        try:
+            stop_bot_with_scheduler()
+            logger.info("✅ Scheduler stopped")
+        except Exception as e:
+            logger.error(f"⚠️  Error stopping scheduler: {e}")
+    
+    # Stop Telegram bot
+    if application:
+        try:
+            if getattr(application, "_running", False):
+                await application.stop()
+                logger.info("✅ Telegram bot stopped")
+            
+            if getattr(application, "_initialized", False):
+                await application.shutdown()
+                logger.info("✅ Telegram bot shutdown complete")
+        except Exception as e:
+            logger.error(f"⚠️  Error stopping Telegram bot: {e}")
+    
+    logger.info("✅ MISIX application shutdown complete")
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="MISIX Backend",
@@ -40,6 +107,7 @@ def create_app() -> FastAPI:
         description="AI Personal Assistant API",
         docs_url="/docs" if not settings.is_production else None,  # Disable docs in production
         redoc_url="/redoc" if not settings.is_production else None,
+        lifespan=lifespan,  # Use lifespan context manager
     )
 
     # ========================================================================
@@ -116,19 +184,7 @@ def create_app() -> FastAPI:
     # Telegram bot webhook (if needed)
     # app.include_router(bot_router, prefix="/bot", tags=["telegram"])
 
-    @app.on_event("startup")
-    async def startup_telegram_bot() -> None:
-        if not getattr(application, "_initialized", False):
-            await application.initialize()
-        if not getattr(application, "_running", False):
-            await application.start()
-
-    @app.on_event("shutdown")
-    async def shutdown_telegram_bot() -> None:
-        if getattr(application, "_running", False):
-            await application.stop()
-        if getattr(application, "_initialized", False):
-            await application.shutdown()
+    # Lifecycle management moved to lifespan context manager above
 
     # Telegram bot webhook endpoint
     @app.post("/bot/webhook")

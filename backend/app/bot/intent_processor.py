@@ -96,12 +96,7 @@ class IntentProcessor:
         else:
             logger.warning(f"Unknown intent type: {intent_type}")
             return None
-
-
-def get_intent_processor() -> IntentProcessor:
-    """Get intent processor instance."""
-    return IntentProcessor()
-
+    
     async def _handle_create_task(self, message: str, user_id: str) -> Optional[dict]:
         """Handle task creation intent.
         
@@ -259,3 +254,8 @@ def get_intent_processor() -> IntentProcessor:
         except Exception as e:
             logger.error(f"Failed to handle track_mood: {e}")
             return None
+
+
+def get_intent_processor() -> IntentProcessor:
+    """Get intent processor instance."""
+    return IntentProcessor()

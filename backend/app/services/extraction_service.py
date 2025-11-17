@@ -57,12 +57,7 @@ class ExtractionService:
             pass
         
         return None
-
-
-def get_extraction_service() -> ExtractionService:
-    """Get extraction service instance."""
-    return ExtractionService()
-
+    
     async def extract_task_data(self, message: str) -> Optional[dict]:
         """Extract task information from message.
         
@@ -313,3 +308,8 @@ def get_extraction_service() -> ExtractionService:
         except Exception as e:
             logger.error(f"Mood extraction failed: {e}")
             return None
+
+
+def get_extraction_service() -> ExtractionService:
+    """Get extraction service instance."""
+    return ExtractionService()

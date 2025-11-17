@@ -60,9 +60,11 @@ def _resolve_webhook_url() -> str | None:
 
 @lru_cache(maxsize=1)
 def create_application() -> Application:
-    """Create a Telegram application instance."""
-    from app.bot.handlers import register_handlers
-
+    """Create a Telegram application instance.
+    
+    Note: Handler registration is now done in app.bot.__init__.py
+    This function is kept for compatibility but handlers are registered elsewhere.
+    """
     logger.info(f"Initializing Telegram bot with token: {settings.telegram_bot_token[:10]}...")
     application = (
         ApplicationBuilder()
@@ -70,7 +72,7 @@ def create_application() -> Application:
         .updater(None)
         .build()
     )
-    register_handlers(application)
+    # Handlers are registered in app.bot.__init__.py
     return application
 
 

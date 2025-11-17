@@ -2,6 +2,8 @@
 
 import logging
 import copy
+import asyncio
+import time
 from telegram import Update, Message
 from telegram.ext import ContextTypes
 
@@ -13,6 +15,10 @@ from app.bot.response_builder import get_response_builder
 from app.bot.yandex_speech import get_yandex_speech_kit
 
 logger = logging.getLogger(__name__)
+
+# Timeouts for voice processing
+VOICE_DOWNLOAD_TIMEOUT = 10  # seconds
+VOICE_TRANSCRIPTION_TIMEOUT = 30  # seconds
 
 
 def create_mock_text_update(voice_update: Update, text: str) -> Update:
@@ -151,6 +157,8 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
         update: Telegram update
         context: Bot context
     """
+    start_time = time.time()
+    
     try:
         user = update.effective_user
         voice = update.message.voice
@@ -163,11 +171,20 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
             action="typing"
         )
         
-        # 2. Download voice file
+        # 2. Download voice file with timeout
         try:
             voice_file = await context.bot.get_file(voice.file_id)
-            audio_bytes = await voice_file.download_as_bytearray()
+            audio_bytes = await asyncio.wait_for(
+                voice_file.download_as_bytearray(),
+                timeout=VOICE_DOWNLOAD_TIMEOUT
+            )
             logger.info(f"Downloaded voice file: {len(audio_bytes)} bytes")
+        except asyncio.TimeoutError:
+            logger.error(f"Voice download timeout after {VOICE_DOWNLOAD_TIMEOUT}s")
+            await update.message.reply_text(
+                "Не удалось скачать голосовое сообщение (таймаут). Попробуйте еще раз."
+            )
+            return
         except Exception as e:
             logger.error(f"Failed to download voice file: {e}")
             await update.message.reply_text(
@@ -175,10 +192,13 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
             )
             return
         
-        # 3. Transcribe with Yandex SpeechKit
+        # 3. Transcribe with Yandex SpeechKit with timeout
         try:
             speech_kit = get_yandex_speech_kit()
-            transcription = await speech_kit.transcribe_audio(bytes(audio_bytes))
+            transcription = await asyncio.wait_for(
+                speech_kit.transcribe_audio(bytes(audio_bytes)),
+                timeout=VOICE_TRANSCRIPTION_TIMEOUT
+            )
             
             if not transcription or not transcription.strip():
                 logger.warning("Empty transcription result")
@@ -189,6 +209,12 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
             
             logger.info(f"Transcription successful: '{transcription[:50]}...'")
             
+        except asyncio.TimeoutError:
+            logger.error(f"Transcription timeout after {VOICE_TRANSCRIPTION_TIMEOUT}s")
+            await update.message.reply_text(
+                "Распознавание речи заняло слишком много времени. Попробуйте короче или отправьте текстом."
+            )
+            return
         except Exception as e:
             logger.error(f"Transcription failed: {e}")
             await update.message.reply_text(
@@ -210,6 +236,10 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
             await update.message.reply_text(
                 "Распознал, но не смог обработать. Попробуйте еще раз."
             )
+        
+        # Log total processing time
+        elapsed_time = time.time() - start_time
+        logger.info(f"Voice message processed in {elapsed_time:.2f}s")
         
     except Exception as e:
         # Handle any unexpected errors

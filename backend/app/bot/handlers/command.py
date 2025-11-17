@@ -17,6 +17,7 @@ HELP_MESSAGE = """
 /tasks - Список ваших задач
 /finances - Финансовая сводка
 /mood - История настроения
+/reminders - Настройки напоминаний
 /profile - Ваш профиль
 
 **💬 Как пользоваться:**
@@ -30,6 +31,9 @@ HELP_MESSAGE = """
 
 **🎤 Голосовые сообщения:**
 Отправляйте голосовые - я распознаю речь и обработаю как текст!
+
+**⏰ Напоминания:**
+Получайте напоминания о задачах и ежедневную утреннюю сводку!
 
 **🌐 Веб-интерфейс:**
 https://misix.netlify.app
@@ -305,3 +309,149 @@ async def handle_mood_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(
             "Не удалось загрузить данные о настроении. Попробуйте позже."
         )
+
+
+async def handle_reminders_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /reminders command - manage reminder settings.
+    
+    Args:
+        update: Telegram update
+        context: Bot context
+    """
+    try:
+        from app.repositories.user import get_user_repository
+        from app.repositories.user_settings import get_user_settings_repository
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
+        user_telegram = update.effective_user
+        
+        # Get user
+        user_repo = get_user_repository()
+        user = await user_repo.get_by_telegram_id(user_telegram.id)
+        
+        if not user:
+            await update.message.reply_text(
+                "Сначала отправьте мне любое сообщение, чтобы я вас зарегистрировал."
+            )
+            return
+        
+        # Get settings
+        settings_repo = get_user_settings_repository()
+        settings = await settings_repo.get_settings(str(user["id"]))
+        
+        # Build message
+        enabled = settings.get("reminders_enabled", True)
+        summary_time = settings.get("daily_summary_time", "09:00")
+        minutes_before = settings.get("reminder_minutes_before", 60)
+        
+        status_emoji = "✅" if enabled else "❌"
+        
+        message = f"""⏰ **Настройки напоминаний**
+
+{status_emoji} Напоминания: {'Включены' if enabled else 'Выключены'}
+🌅 Утренняя сводка: {summary_time}
+⏱ Напоминать за: {minutes_before} минут
+
+**Что я делаю:**
+• Напоминаю о задачах перед дедлайном
+• Отправляю утреннюю сводку задач
+• Показываю просроченные задачи
+
+Используйте кнопки ниже для настройки:
+"""
+        
+        # Build keyboard
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    "✅ Включить" if not enabled else "❌ Выключить",
+                    callback_data=f"reminder_toggle:{user['id']}"
+                )
+            ],
+            [
+                InlineKeyboardButton("⏱ 15 мин", callback_data=f"reminder_time:15:{user['id']}"),
+                InlineKeyboardButton("⏱ 30 мин", callback_data=f"reminder_time:30:{user['id']}"),
+                InlineKeyboardButton("⏱ 60 мин", callback_data=f"reminder_time:60:{user['id']}")
+            ],
+            [
+                InlineKeyboardButton("🌅 Изменить время сводки", callback_data=f"reminder_summary:{user['id']}")
+            ]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            message,
+            parse_mode="Markdown",
+            reply_markup=reply_markup
+        )
+        
+        logger.info(f"User {user_telegram.id} viewed reminder settings")
+        
+    except Exception as e:
+        logger.error(f"Failed to show reminder settings: {e}", exc_info=True)
+        await update.message.reply_text(
+            "Не удалось загрузить настройки напоминаний. Попробуйте позже."
+        )
+
+
+async def handle_reminder_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle callback queries from reminder settings.
+    
+    Args:
+        update: Telegram update with callback query
+        context: Bot context
+    """
+    try:
+        from app.repositories.user_settings import get_user_settings_repository
+        
+        query = update.callback_query
+        await query.answer()
+        
+        data = query.data
+        settings_repo = get_user_settings_repository()
+        
+        if data.startswith("reminder_toggle:"):
+            user_id = data.split(":")[1]
+            settings = await settings_repo.get_settings(user_id)
+            new_state = not settings.get("reminders_enabled", True)
+            
+            await settings_repo.update_settings(
+                user_id=user_id,
+                reminders_enabled=new_state
+            )
+            
+            status = "включены" if new_state else "выключены"
+            await query.edit_message_text(
+                f"✅ Напоминания {status}!\n\nИспользуйте /reminders чтобы изменить настройки."
+            )
+            
+        elif data.startswith("reminder_time:"):
+            parts = data.split(":")
+            minutes = int(parts[1])
+            user_id = parts[2]
+            
+            await settings_repo.update_settings(
+                user_id=user_id,
+                reminder_minutes_before=minutes
+            )
+            
+            await query.edit_message_text(
+                f"✅ Буду напоминать за {minutes} минут до дедлайна!\n\nИспользуйте /reminders чтобы изменить настройки."
+            )
+            
+        elif data.startswith("reminder_summary:"):
+            await query.edit_message_text(
+                "🌅 Чтобы изменить время утренней сводки, напишите:\n\n"
+                "\"Установи время сводки на 08:00\"\n\n"
+                "Или используйте /reminders для других настроек."
+            )
+        
+        logger.info(f"Processed reminder callback: {data}")
+        
+    except Exception as e:
+        logger.error(f"Failed to handle reminder callback: {e}", exc_info=True)
+        try:
+            await update.callback_query.answer("Произошла ошибка. Попробуйте позже.")
+        except:
+            pass

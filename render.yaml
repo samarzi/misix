@@ -6,6 +6,8 @@ services:
     region: frankfurt
     buildCommand: pip install -r backend/requirements.txt
     startCommand: cd backend && uvicorn app.web.main:app --host 0.0.0.0 --port $PORT
+    # Specify Python version (critical for python-telegram-bot compatibility)
+    runtimeVersion: "3.11"
     envVars:
       - key: PYTHON_VERSION
         value: "3.11"

@@ -17,24 +17,17 @@ def _create_application():
         return None
     
     try:
-        # Create application without job_queue to avoid weak reference error in Python 3.13
-        # Job queue functionality is handled by APScheduler instead
-        app = (
-            Application.builder()
-            .token(settings.telegram_bot_token)
-            .job_queue(None)  # Disable job_queue to avoid weak reference error
-            .build()
-        )
+        # Create application with standard configuration
+        # Python 3.11 is fully compatible with python-telegram-bot
+        app = Application.builder().token(settings.telegram_bot_token).build()
         logger.info("Telegram application created successfully")
-        return app
-    except TypeError as e:
-        if "weak reference" in str(e):
-            logger.error(
-                "Failed to create Telegram application due to Python 3.13 compatibility issue. "
-                "Bot functionality will be disabled. Error: %s", e
-            )
-            return None
-        raise
+    except Exception as e:
+        logger.error(
+            f"Failed to create Telegram application: {e}. "
+            "Bot functionality will be disabled.",
+            exc_info=True
+        )
+        return None
     
     if not app:
         return None

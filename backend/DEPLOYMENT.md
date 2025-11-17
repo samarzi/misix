@@ -6,6 +6,27 @@
 2. ✅ Supabase project created and accessible
 3. ✅ Yandex Cloud account with GPT API access
 4. ✅ Render account
+5. ✅ Python 3.11 runtime configured (see Python Version section below)
+
+## Python Version Requirement
+
+**⚠️ Critical:** This application requires Python 3.11 for production deployment.
+
+**Why Python 3.11?**
+- Python 3.13 has compatibility issues with `python-telegram-bot` library (weak reference errors)
+- Python 3.11 is stable, well-tested, and fully supported by all dependencies
+- Python 3.12 may work but is not officially tested
+
+**How to configure:**
+
+The repository includes a `render.yaml` file that automatically sets Python 3.11. If you're configuring manually in Render dashboard:
+
+1. Go to your service → Settings → Environment
+2. Add environment variable:
+   ```
+   PYTHON_VERSION=3.11
+   ```
+3. Save and redeploy
 
 ## Step-by-Step Deployment
 
@@ -148,6 +169,107 @@ Expected response:
 }
 ```
 
+## Startup Validation
+
+The application now includes comprehensive startup validation that checks:
+
+1. **Python Version**: Verifies Python 3.11+ is being used
+2. **Environment Variables**: Validates all required configuration is present
+3. **Database Connection**: Tests connectivity to Supabase
+4. **Database Schema**: Verifies all required tables exist
+5. **Write Operations**: Tests that data can be persisted
+
+### Expected Startup Log Output
+
+```
+🚀 Starting MISIX application...
+📦 Python version: 3.11.x
+🖥️  Platform: Linux-x.x.x
+🌍 Environment: production
+📚 FastAPI: 0.115.0
+📚 python-telegram-bot: 21.0.1
+📚 supabase: 2.4.4
+🔍 Running startup validation checks...
+✅ Python Version: Python 3.11.x - compatible
+✅ Environment Variables: All 6 required and 3 optional variables present
+✅ Phase 1 complete: Configuration validation passed
+🔍 Testing database connection...
+✅ Database connection successful
+📊 Database: db.xxx.supabase.co:443/postgres
+🔍 Verifying database schema...
+✅ Schema validation passed - all 8 tables exist
+🔍 Testing database write operations...
+✅ Database write operation test passed
+✅ Phase 2 complete: Database validation passed
+✅ Telegram bot initialized
+✅ Telegram bot started
+✅ Scheduler started successfully
+✅ Phase 3 complete: Telegram bot initialized
+============================================================
+✅ MISIX application started successfully
+============================================================
+```
+
+### Troubleshooting Startup Failures
+
+#### Critical Validation Failures
+
+If you see:
+```
+❌ Critical validation failures detected. Cannot start application.
+```
+
+Check the logs for specific failures:
+
+**Missing Environment Variables:**
+```
+❌ Environment Variables: Missing required environment variables: JWT_SECRET_KEY, YANDEX_GPT_API_KEY
+```
+→ Add the missing variables in Render dashboard → Environment
+
+**Python Version Issue:**
+```
+❌ Python Version: Python 3.13.x detected. Python 3.13+ has known compatibility issues
+```
+→ Set `PYTHON_VERSION=3.11` in environment variables or use render.yaml
+
+**Database Connection Failed:**
+```
+❌ Database connection failed. Application cannot start.
+```
+→ Verify SUPABASE_URL and SUPABASE_SERVICE_KEY are correct
+→ Check Supabase project is active and accessible
+
+**Missing Database Tables:**
+```
+❌ Database schema incomplete. Missing tables: tasks, notes, mood_entries
+```
+→ Run database migrations (see Database Setup section above)
+
+#### Warning Messages
+
+Warnings allow the application to start but with reduced functionality:
+
+**Optional Environment Variables:**
+```
+⚠️  Environment Variables: Missing optional environment variables: TELEGRAM_BOT_TOKEN
+```
+→ Bot functionality will be disabled, but web API will work
+
+**Python 3.13 Warning:**
+```
+⚠️  Python Version: Python 3.13.x detected. Recommend Python 3.11.
+```
+→ Application may work but could encounter issues. Recommend downgrading to 3.11.
+
 ## Logs
 
 Monitor your deployment logs in Render dashboard to catch any startup errors.
+
+### Key Log Indicators
+
+- ✅ Green checkmarks = successful operations
+- ❌ Red X = critical failures (app won't start)
+- ⚠️  Warning triangle = non-critical issues (app starts with degraded functionality)
+- 🔍 Magnifying glass = validation/testing in progress
+- 📊 Chart = informational data

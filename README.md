@@ -114,7 +114,7 @@
 ### Технологии
 
 **Backend:**
-- Python 3.13
+- Python 3.11 (production) / 3.11+ (development)
 - FastAPI
 - python-telegram-bot
 - Supabase (PostgreSQL)
@@ -152,9 +152,11 @@ misix/
 ## 🛠️ Разработка
 
 ### Требования
-- Python 3.13+
+- Python 3.11+ (рекомендуется 3.11 для production)
 - Node.js 18+
 - PostgreSQL (или Supabase)
+
+> **⚠️ Важно:** Для production развертывания используйте Python 3.11. Python 3.13 имеет проблемы совместимости с библиотекой python-telegram-bot.
 
 ### Установка
 

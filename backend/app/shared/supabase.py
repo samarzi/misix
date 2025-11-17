@@ -83,6 +83,9 @@ async def ensure_user_record(
     if client is None:
         logger.debug("Skipping ensure_user_record – Supabase not configured")
         return
+    
+    logger.debug(f"Upserting user record for telegram_id={telegram_id}")
+    
     payload = {
         "telegram_id": telegram_id,
         "username": username,
@@ -90,9 +93,14 @@ async def ensure_user_record(
         "language_code": language_code,
     }
 
-    await _run_db_call(
-        lambda: client.table(USERS_TABLE).upsert(payload, on_conflict="telegram_id").execute()
-    )
+    try:
+        await _run_db_call(
+            lambda: client.table(USERS_TABLE).upsert(payload, on_conflict="telegram_id").execute()
+        )
+        logger.debug(f"Successfully upserted user record for telegram_id={telegram_id}")
+    except Exception as e:
+        logger.error(f"Failed to upsert user record for telegram_id={telegram_id}: {e}", exc_info=True)
+        raise
 
 
 async def create_note(
@@ -105,13 +113,22 @@ async def create_note(
     if client is None:
         logger.debug("Skipping create_note – Supabase not configured")
         return
+    
+    logger.debug(f"Creating note for telegram_id={telegram_id}, source={source}")
+    
     payload = {
         "telegram_id": telegram_id,
         "content": content,
         "source": source,
     }
 
-    await _run_db_call(lambda: client.table(NOTES_TABLE).insert(payload).execute())
+    try:
+        result = await _run_db_call(lambda: client.table(NOTES_TABLE).insert(payload).execute())
+        logger.info(f"✅ Note created for telegram_id={telegram_id}")
+        return result
+    except Exception as e:
+        logger.error(f"❌ Failed to create note for telegram_id={telegram_id}: {e}", exc_info=True)
+        raise
 
 
 async def create_task(
@@ -125,6 +142,9 @@ async def create_task(
     if client is None:
         logger.debug("Skipping create_task – Supabase not configured")
         return
+    
+    logger.debug(f"Creating task for telegram_id={telegram_id}, title='{title}', source={source}")
+    
     payload = {
         "telegram_id": telegram_id,
         "title": title,
@@ -132,7 +152,13 @@ async def create_task(
         "source": source,
     }
 
-    await _run_db_call(lambda: client.table(TASKS_TABLE).insert(payload).execute())
+    try:
+        result = await _run_db_call(lambda: client.table(TASKS_TABLE).insert(payload).execute())
+        logger.info(f"✅ Task created for telegram_id={telegram_id}: '{title}'")
+        return result
+    except Exception as e:
+        logger.error(f"❌ Failed to create task for telegram_id={telegram_id}: {e}", exc_info=True)
+        raise
 
 
 async def log_assistant_message(
@@ -146,6 +172,9 @@ async def log_assistant_message(
     if client is None:
         logger.debug("Skipping log_assistant_message – Supabase not configured")
         return
+    
+    logger.debug(f"Logging assistant message for telegram_id={telegram_id}, role={role}")
+    
     payload = {
         "telegram_id": telegram_id,
         "role": role,
@@ -153,6 +182,12 @@ async def log_assistant_message(
         "session_id": session_id,
     }
 
-    await _run_db_call(
-        lambda: client.table(ASSISTANT_MESSAGES_TABLE).insert(payload).execute()
-    )
+    try:
+        result = await _run_db_call(
+            lambda: client.table(ASSISTANT_MESSAGES_TABLE).insert(payload).execute()
+        )
+        logger.debug(f"Assistant message logged for telegram_id={telegram_id}")
+        return result
+    except Exception as e:
+        logger.error(f"❌ Failed to log assistant message for telegram_id={telegram_id}: {e}", exc_info=True)
+        raise

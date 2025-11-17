@@ -41,7 +41,116 @@ async def lifespan(app: FastAPI):
     # ========================================================================
     # STARTUP
     # ========================================================================
+    import sys
+    import platform
+    
     logger.info("🚀 Starting MISIX application...")
+    logger.info(f"📦 Python version: {sys.version}")
+    logger.info(f"🖥️  Platform: {platform.platform()}")
+    logger.info(f"🌍 Environment: {settings.environment}")
+    
+    # Log key package versions
+    try:
+        import fastapi
+        import telegram
+        import supabase
+        logger.info(f"📚 FastAPI: {fastapi.__version__}")
+        logger.info(f"📚 python-telegram-bot: {telegram.__version__}")
+        logger.info(f"📚 supabase: {supabase.__version__}")
+    except Exception as e:
+        logger.warning(f"Could not log package versions: {e}")
+    
+    # ========================================================================
+    # Phase 1: Validate Configuration and Environment
+    # ========================================================================
+    from app.core.startup import StartupValidator, ValidationSeverity
+    
+    validator = StartupValidator()
+    validation_result = await validator.validate_all()
+    
+    # Log all validation results
+    for check in validation_result.checks:
+        if check.passed:
+            if check.severity == ValidationSeverity.INFO:
+                logger.info(f"✅ {check.name}: {check.message}")
+            else:
+                logger.info(str(check))
+        elif check.severity == ValidationSeverity.CRITICAL:
+            logger.error(f"❌ {check.name}: {check.message}", extra={"details": check.details})
+        else:
+            logger.warning(f"⚠️  {check.name}: {check.message}", extra={"details": check.details})
+    
+    # Fail fast on critical errors
+    if validation_result.critical_failures:
+        logger.error("❌ Critical validation failures detected. Cannot start application.")
+        for failure in validation_result.critical_failures:
+            logger.error(f"  - {failure.name}: {failure.message}")
+        raise RuntimeError(
+            f"Startup validation failed with {len(validation_result.critical_failures)} critical errors. "
+            "Check logs for details."
+        )
+    
+    # Warn about non-critical issues
+    if validation_result.warnings:
+        logger.warning(
+            f"⚠️  {len(validation_result.warnings)} warnings detected. "
+            "Application will start with degraded functionality."
+        )
+        for warning in validation_result.warnings:
+            logger.warning(f"  - {warning.name}: {warning.message}")
+    
+    logger.info("✅ Phase 1 complete: Configuration validation passed")
+    
+    # ========================================================================
+    # Phase 2: Validate Database Connection and Schema
+    # ========================================================================
+    from app.core.database import DatabaseValidator
+    
+    db_validator = DatabaseValidator()
+    
+    # Test database connection
+    logger.info("🔍 Testing database connection...")
+    db_connected = await db_validator.test_connection()
+    
+    if not db_connected:
+        logger.error("❌ Database connection failed. Application cannot start.")
+        raise RuntimeError("Database connection validation failed")
+    
+    # Get connection info for logging
+    conn_info = await db_validator.get_connection_info()
+    if conn_info:
+        logger.info(f"📊 Database: {conn_info.host}:{conn_info.port}/{conn_info.database}")
+    
+    # Verify schema
+    logger.info("🔍 Verifying database schema...")
+    schema_result = await db_validator.verify_schema()
+    
+    if not schema_result.all_tables_exist:
+        logger.error(
+            f"❌ Database schema incomplete. Missing tables: {', '.join(schema_result.missing_tables)}"
+        )
+        logger.error(
+            "Please run database migrations. See backend/alembic/README.md for instructions."
+        )
+        raise RuntimeError(
+            f"Database schema validation failed. Missing {len(schema_result.missing_tables)} tables."
+        )
+    
+    logger.info(schema_result.get_summary())
+    
+    # Test write operation
+    logger.info("🔍 Testing database write operations...")
+    write_ok = await db_validator.test_write_operation()
+    
+    if not write_ok:
+        logger.error("❌ Database write operations failed. Data persistence will not work.")
+        raise RuntimeError("Database write operation test failed")
+    
+    logger.info("✅ Phase 2 complete: Database validation passed")
+    
+    # ========================================================================
+    # Phase 3: Initialize Components
+    # ========================================================================
     
     # Start Telegram bot
     application = get_application()
@@ -62,14 +171,19 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.error(f"⚠️  Failed to start scheduler: {e}", exc_info=True)
                 logger.warning("Continuing without scheduler - reminders will not work")
+            
+            logger.info("✅ Phase 3 complete: Telegram bot initialized")
         
         except Exception as e:
             logger.error(f"❌ Failed to start Telegram bot: {e}", exc_info=True)
             logger.warning("Continuing without Telegram bot")
     else:
         logger.info("ℹ️  Telegram bot not configured (TELEGRAM_BOT_TOKEN not set)")
+        logger.info("✅ Phase 3 complete: Bot initialization skipped")
     
+    logger.info("=" * 60)
     logger.info("✅ MISIX application started successfully")
+    logger.info("=" * 60)
     
     yield
     

@@ -123,6 +123,12 @@ class Settings(BaseSettings):
         description="Telegram webhook URL (optional)",
     )
     
+    # Database Settings
+    database_url: Optional[str] = Field(
+        default=None,
+        description="Direct PostgreSQL connection URL (optional, for Alembic migrations)",
+    )
+    
     # Backend Settings
     backend_base_url: str = Field(
         default="http://localhost:8000",
@@ -231,6 +237,18 @@ class Settings(BaseSettings):
                 "Encryption key must be at least 32 characters long. "
                 "Generate using: openssl rand -hex 32"
             )
+        return v
+    
+    @field_validator("database_url")
+    @classmethod
+    def validate_database_url(cls, v: Optional[str]) -> Optional[str]:
+        """Validate database URL format if provided."""
+        if v is not None:
+            if not v.startswith(("postgresql://", "postgres://")):
+                raise ValueError(
+                    "DATABASE_URL must be a PostgreSQL connection string starting with "
+                    "'postgresql://' or 'postgres://'"
+                )
         return v
     
     # ============================================================================

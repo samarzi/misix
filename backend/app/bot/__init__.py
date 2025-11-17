@@ -10,7 +10,14 @@ if settings.telegram_bot_token:
     application = Application.builder().token(settings.telegram_bot_token).build()
     
     # Register handlers
-    from .handlers.command import handle_start_command, handle_help_command, handle_profile_command
+    from .handlers.command import (
+        handle_start_command,
+        handle_help_command,
+        handle_profile_command,
+        handle_tasks_command,
+        handle_finances_command,
+        handle_mood_command
+    )
     from .handlers.message import handle_text_message, handle_voice_message
     from .handlers.sleep import handle_sleep_start, handle_sleep_stop
     
@@ -18,6 +25,9 @@ if settings.telegram_bot_token:
     application.add_handler(CommandHandler("start", handle_start_command))
     application.add_handler(CommandHandler("help", handle_help_command))
     application.add_handler(CommandHandler("profile", handle_profile_command))
+    application.add_handler(CommandHandler("tasks", handle_tasks_command))
+    application.add_handler(CommandHandler("finances", handle_finances_command))
+    application.add_handler(CommandHandler("mood", handle_mood_command))
     application.add_handler(CommandHandler("sleep", handle_sleep_start))
     application.add_handler(CommandHandler("wake", handle_sleep_stop))
     

@@ -227,10 +227,22 @@ class Settings(BaseSettings):
     @classmethod
     def parse_frontend_origins(cls, v):
         """Parse frontend origins from string or list."""
+        if v is None:
+            # Return default if not set
+            return ["http://localhost:5173", "http://localhost:3000"]
         if isinstance(v, str):
+            # Handle empty string
+            if not v.strip():
+                return ["http://localhost:5173", "http://localhost:3000"]
             # Split by comma and strip whitespace
             return [origin.strip() for origin in v.split(",") if origin.strip()]
-        return v
+        if isinstance(v, list):
+            return v
+        # If it's some other type, try to convert to string first
+        try:
+            return [origin.strip() for origin in str(v).split(",") if origin.strip()]
+        except Exception:
+            raise ValueError(f"Cannot parse frontend_allowed_origins from value: {v}")
     
     @field_validator("encryption_key")
     @classmethod

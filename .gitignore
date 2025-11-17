@@ -21,3 +21,4 @@ venv/
 node_modules/
 build/
 .DS_Store
+RENDER_ENV_VARS.txt

@@ -131,7 +131,7 @@ class Settings(BaseSettings):
     
     # Frontend Settings
     frontend_allowed_origins: list[str] = Field(
-        default=[
+        default_factory=lambda: [
             "http://localhost:5173",
             "http://localhost:3000",
         ],
@@ -227,22 +227,59 @@ class Settings(BaseSettings):
     @classmethod
     def parse_frontend_origins(cls, v):
         """Parse frontend origins from string or list."""
-        if v is None:
-            # Return default if not set
+        import sys
+        
+        # Debug logging
+        print(f"DEBUG: frontend_allowed_origins raw value: {v!r}", file=sys.stderr)
+        print(f"DEBUG: frontend_allowed_origins type: {type(v)}", file=sys.stderr)
+        
+        # Handle None or empty
+        if v is None or v == "":
+            print("DEBUG: Using default origins (None or empty)", file=sys.stderr)
             return ["http://localhost:5173", "http://localhost:3000"]
+        
+        # Handle string
         if isinstance(v, str):
-            # Handle empty string
-            if not v.strip():
+            v = v.strip()
+            if not v:
+                print("DEBUG: Using default origins (empty string)", file=sys.stderr)
                 return ["http://localhost:5173", "http://localhost:3000"]
-            # Split by comma and strip whitespace
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
+            
+            # Try to parse as JSON array first (in case Render sends it that way)
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    import json
+                    parsed = json.loads(v)
+                    if isinstance(parsed, list):
+                        print(f"DEBUG: Parsed as JSON array: {parsed}", file=sys.stderr)
+                        return [str(item).strip() for item in parsed if item]
+                except Exception as e:
+                    print(f"DEBUG: Failed to parse as JSON: {e}", file=sys.stderr)
+            
+            # Parse as comma-separated string
+            origins = [origin.strip() for origin in v.split(",") if origin.strip()]
+            print(f"DEBUG: Parsed as comma-separated: {origins}", file=sys.stderr)
+            return origins
+        
+        # Handle list
         if isinstance(v, list):
-            return v
-        # If it's some other type, try to convert to string first
+            origins = [str(item).strip() for item in v if item]
+            print(f"DEBUG: Parsed as list: {origins}", file=sys.stderr)
+            return origins
+        
+        # Last resort: convert to string and try again
         try:
-            return [origin.strip() for origin in str(v).split(",") if origin.strip()]
-        except Exception:
-            raise ValueError(f"Cannot parse frontend_allowed_origins from value: {v}")
+            str_v = str(v).strip()
+            if str_v:
+                origins = [origin.strip() for origin in str_v.split(",") if origin.strip()]
+                print(f"DEBUG: Parsed after str() conversion: {origins}", file=sys.stderr)
+                return origins
+        except Exception as e:
+            print(f"DEBUG: Failed to convert to string: {e}", file=sys.stderr)
+        
+        # If all else fails, use defaults
+        print(f"DEBUG: Using default origins (fallback), original value was: {v!r}", file=sys.stderr)
+        return ["http://localhost:5173", "http://localhost:3000"]
     
     @field_validator("encryption_key")
     @classmethod

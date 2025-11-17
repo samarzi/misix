@@ -7,6 +7,8 @@ from telegram.ext import ContextTypes
 from app.repositories.user import get_user_repository
 from app.services.conversation_service import get_conversation_service
 from app.services.ai_service import get_ai_service
+from app.bot.intent_processor import get_intent_processor
+from app.bot.response_builder import get_response_builder
 
 logger = logging.getLogger(__name__)
 
@@ -54,16 +56,45 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             telegram_id=user_telegram.id
         )
         
-        # 5. Generate AI response
+        # 5. NEW: Classify intents
         ai_service = get_ai_service()
+        intent_result = await ai_service.classify_intent(message_text)
+        intents = intent_result.get("intents", [])
+        
+        # 6. NEW: Process intents and create entities
+        created_entities = []
+        if intents:
+            intent_processor = get_intent_processor()
+            created_entities = await intent_processor.process_intents(
+                intents=intents,
+                message=message_text,
+                user_id=user_id
+            )
+            logger.info(f"Created {len(created_entities)} entities from intents")
+        
+        # 7. NEW: Build confirmations
+        response_builder = get_response_builder()
+        confirmations = response_builder.build_confirmation(created_entities)
+        
+        # 8. Generate AI response with confirmations
+        system_prompt = None
+        if confirmations:
+            system_prompt = f"""
+Ты только что выполнил следующие действия для пользователя:
+{confirmations}
+
+Ответь естественно, подтверждая выполненные действия. Будь дружелюбным и кратким.
+"""
+        
         response = await ai_service.generate_response(
             user_message=message_text,
-            conversation_context=conversation_context
+            conversation_context=conversation_context,
+            system_prompt=system_prompt
         )
         
         logger.info(f"Generated response for user {user_telegram.id} (length: {len(response)})")
         
-        # 6. Save assistant response to history
+        # 9. Save assistant response to history
         await conv_service.add_message(
             user_id=user_id,
             role="assistant",
@@ -71,7 +102,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             telegram_id=user_telegram.id
         )
         
-        # 7. Send reply to user
+        # 10. Send reply to user
         await update.message.reply_text(response)
         
     except Exception as e:

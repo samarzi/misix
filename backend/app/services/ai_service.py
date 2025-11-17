@@ -99,59 +99,78 @@ class AIService:
             return self._get_fallback_response(user_message)
     
     async def classify_intent(self, user_message: str) -> dict:
-        """Classify user intent from message.
+        """Classify user intent(s) from message.
         
-        This helps determine what action the user wants to perform
-        (create task, add expense, save note, etc.)
+        Can detect multiple intents in one message.
         
         Args:
             user_message: User's message
             
         Returns:
-            Dictionary with intent classification
+            Dictionary with list of intents: {"intents": [{"type": "...", "confidence": 0.0-1.0}]}
         """
         if not self.available or not self.gpt_client:
-            return {"intent": "unknown", "confidence": 0.0}
+            return {"intents": []}
         
         try:
             prompt = f"""
-Analyze this user message and classify the intent:
+Проанализируй сообщение и определи ВСЕ намерения пользователя:
 "{user_message}"
 
-Possible intents:
-- create_task: User wants to create a task or reminder
-- add_expense: User is reporting an expense
-- add_income: User is reporting income
-- save_note: User wants to save a note or information
-- ask_question: User is asking a question
-- general_chat: General conversation
+Возможные намерения:
+- create_task: хочет создать задачу или напоминание
+- add_expense: сообщает о расходе
+- add_income: сообщает о доходе
+- save_note: хочет сохранить информацию/заметку
+- track_mood: выражает настроение или эмоцию
+- general_chat: просто общается
 
-Respond with JSON: {{"intent": "...", "confidence": 0.0-1.0}}
+Верни JSON:
+{{
+    "intents": [
+        {{"type": "create_task", "confidence": 0.95}},
+        {{"type": "add_expense", "confidence": 0.85}}
+    ]
+}}
+
+Примеры:
+"потратил 200₽ на такси и напомни купить молоко" -> {{"intents": [{{"type": "add_expense", "confidence": 0.95}}, {{"type": "create_task", "confidence": 0.9}}]}}
+"сегодня отличное настроение!" -> {{"intents": [{{"type": "track_mood", "confidence": 0.95}}]}}
+"как дела?" -> {{"intents": [{{"type": "general_chat", "confidence": 0.95}}]}}
+
+Верни ТОЛЬКО JSON, без дополнительного текста.
 """
             
             messages = [
-                {"role": "system", "text": "You are an intent classifier. Respond only with JSON."},
+                {"role": "system", "text": "Ты - классификатор намерений. Отвечай только JSON."},
                 {"role": "user", "text": prompt},
             ]
             
             response = await self.gpt_client.chat(
                 messages=messages,
                 temperature=0.3,
-                max_tokens=100,
+                max_tokens=200,
             )
             
             # Parse JSON response
             import json
             try:
-                result = json.loads(response)
+                result = json.loads(response.strip())
+                # Sort by confidence
+                if "intents" in result:
+                    result["intents"] = sorted(
+                        result["intents"],
+                        key=lambda x: x.get("confidence", 0),
+                        reverse=True
+                    )
                 return result
             except json.JSONDecodeError:
                 logger.warning(f"Failed to parse intent classification: {response}")
-                return {"intent": "unknown", "confidence": 0.0}
+                return {"intents": []}
             
         except Exception as e:
             logger.error(f"Intent classification failed: {e}")
-            return {"intent": "unknown", "confidence": 0.0}
+            return {"intents": []}
     
     async def extract_structured_data(
         self,

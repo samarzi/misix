@@ -1,11 +1,8 @@
 /**
- * Auth Store - Simplified for Telegram-only authentication
+ * Auth Store - Telegram-only authentication
  * 
- * Note: This store has been simplified to remove email/password authentication.
+ * This store manages authentication state for Telegram WebApp users.
  * The application uses Telegram-based authentication via the Telegram bot.
- * 
- * If you need to add authentication state management for Telegram users in the future,
- * you can implement it here.
  */
 
 import { create } from 'zustand';
@@ -25,23 +22,44 @@ interface AuthState {
   
   // Actions
   setUser: (user: User | null) => void;
+  setLoading: (isLoading: boolean) => void;
+  setError: (error: string | null) => void;
   clearError: () => void;
+  logout: () => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isAuthenticated: false,
-  isLoading: false,
+  isLoading: true, // Start with loading state
   error: null,
 
   setUser: (user: User | null) => {
     set({
       user,
       isAuthenticated: !!user,
+      isLoading: false,
     });
+  },
+
+  setLoading: (isLoading: boolean) => {
+    set({ isLoading });
+  },
+
+  setError: (error: string | null) => {
+    set({ error, isLoading: false });
   },
 
   clearError: () => {
     set({ error: null });
+  },
+
+  logout: () => {
+    localStorage.removeItem('misix_user_id');
+    set({
+      user: null,
+      isAuthenticated: false,
+      error: null,
+    });
   },
 }));

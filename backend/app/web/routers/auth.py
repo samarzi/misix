@@ -221,3 +221,36 @@ async def update_user(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Update failed"
         )
+
+@router.get("/telegram/{telegram_id}")
+async def get_user_by_telegram_id(telegram_id: int):
+    """Get user by Telegram ID for Telegram WebApp authentication."""
+    try:
+        supabase = get_supabase_client()
+
+        # Get user by telegram_id
+        response = supabase.table("users").select("*").eq("telegram_id", telegram_id).execute()
+
+        if not response.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        user_data = response.data[0]
+        
+        return {
+            "id": user_data["id"],
+            "telegram_id": user_data["telegram_id"],
+            "full_name": user_data.get("full_name"),
+            "username": user_data.get("username"),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting user by telegram_id: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get user"
+        )

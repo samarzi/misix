@@ -241,3 +241,9 @@ export const updateNote = async (payload: UpdateNotePayload) => {
 export const deleteNote = async (id: string) => {
   await client.delete(`/api/notes/${id}`);
 };
+
+// Auth endpoints
+export const getUserByTelegramId = async (telegramId: number) => {
+  const { data } = await client.get(`/api/auth/telegram/${telegramId}`);
+  return data;
+};

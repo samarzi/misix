@@ -139,7 +139,7 @@
     - Remove direct database access from routers
     - _Requirements: 3.4, 3.5_
 
-- [ ] 5. Implement Database Optimizations
+- [x] 5. Implement Database Optimizations
   - [x] 5.1 Add eager loading for related data
     - Update repository methods to use joins
     - Implement select_related for foreign keys
@@ -165,7 +165,7 @@
 ## Phase 3: Frontend Refactoring
 
 - [ ] 6. Refactor Frontend Architecture
-  - [ ] 6.1 Implement authentication on frontend
+  - [-] 6.1 Implement authentication on frontend
     - Create `frontend/src/features/auth/` directory structure
     - Create LoginForm and RegisterForm components
     - Implement useAuth hook for auth state management

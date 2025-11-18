@@ -2,415 +2,213 @@
 
 ## Overview
 
-MISIX uses JWT (JSON Web Token) based authentication for secure API access. This document describes how to use the authentication system.
+MISIX uses Telegram-based authentication. Users interact with the application through the Telegram bot, and authentication is handled automatically via Telegram user IDs (`telegram_id`).
 
-## Quick Start
+**Note:** Email/password authentication has been removed from the application. All authentication is now handled through Telegram.
 
-### 1. Register a New User
+## How It Works
 
-```bash
-curl -X POST http://localhost:8000/api/v2/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "user@example.com",
-    "password": "SecurePass123!",
-    "full_name": "John Doe"
-  }'
-```
+1. **User Interaction**: Users interact with MISIX through the Telegram bot
+2. **Automatic Registration**: When a user first messages the bot, they are automatically registered using their Telegram ID
+3. **User Identification**: All subsequent interactions are authenticated using the Telegram ID
+4. **No Passwords**: No passwords or email addresses are required
 
-**Response:**
-```json
+## User Data Structure
+
+Users in the database have the following structure:
+
+```python
 {
-  "id": "123e4567-e89b-12d3-a456-426614174000",
-  "email": "user@example.com",
-  "full_name": "John Doe",
-  "telegram_id": null,
-  "email_verified": false,
+  "id": "123e4567-e89b-12d3-a456-426614174000",  # UUID
+  "telegram_id": 123456789,                       # Telegram user ID (required)
+  "username": "john_doe",                         # Telegram username (optional)
+  "full_name": "John Doe",                        # User's full name
+  "language_code": "en",                          # Telegram language preference
   "created_at": "2025-01-17T10:30:00Z",
   "updated_at": "2025-01-17T10:30:00Z"
 }
 ```
 
-### 2. Login
+## Getting Started
 
-```bash
-curl -X POST http://localhost:8000/api/v2/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "user@example.com",
-    "password": "SecurePass123!"
-  }'
+### For Users
+
+1. Open Telegram
+2. Search for the MISIX bot
+3. Send `/start` command
+4. Start using the bot - you're automatically authenticated!
+
+### For Developers
+
+Users are automatically created when they interact with the bot. The bot handlers in `backend/app/bot/handlers/` manage user creation and authentication.
+
+**Example: Getting or Creating a User**
+
+```python
+from app.repositories.user import UserRepository
+
+async def get_or_create_user(telegram_id: int, username: str, full_name: str):
+    """Get existing user or create new one from Telegram data."""
+    user_repo = UserRepository()
+    
+    # Try to get existing user
+    user = await user_repo.get_by_telegram_id(telegram_id)
+    
+    if not user:
+        # Create new user
+        user = await user_repo.create({
+            "telegram_id": telegram_id,
+            "username": username,
+            "full_name": full_name,
+            "language_code": "en"
+        })
+    
+    return user
 ```
 
-**Response:**
-```json
-{
-  "user": {
-    "id": "123e4567-e89b-12d3-a456-426614174000",
-    "email": "user@example.com",
-    "full_name": "John Doe",
-    "email_verified": false,
-    "created_at": "2025-01-17T10:30:00Z"
-  },
-  "tokens": {
-    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "token_type": "bearer",
-    "expires_in": 900
-  }
-}
+## Bot Configuration
+
+The Telegram bot is configured via environment variables:
+
+```env
+# Telegram Bot Configuration
+TELEGRAM_BOT_TOKEN=your-bot-token-from-botfather  # Required
+TELEGRAM_WEBHOOK_URL=https://your-domain.com      # Optional (for webhook mode)
 ```
 
-### 3. Access Protected Endpoints
+**Getting a Bot Token:**
 
-Include the access token in the Authorization header:
+1. Open Telegram and search for [@BotFather](https://t.me/botfather)
+2. Send `/newbot` command
+3. Follow the instructions to create your bot
+4. Copy the bot token provided by BotFather
+5. Set it as `TELEGRAM_BOT_TOKEN` environment variable
 
-```bash
-curl -X GET http://localhost:8000/api/v2/auth/me \
-  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-```
+## Security Considerations
 
-### 4. Refresh Access Token
+### Telegram Authentication Security
 
-When the access token expires (after 15 minutes), use the refresh token:
+- **Telegram ID Verification**: Telegram IDs are unique and cannot be spoofed
+- **Bot Token Security**: Keep your bot token secret - never commit it to version control
+- **Webhook Security**: If using webhooks, ensure your webhook URL uses HTTPS
+- **User Privacy**: Respect Telegram user privacy - only store necessary data
 
-```bash
-curl -X POST http://localhost:8000/api/v2/auth/refresh \
-  -H "Content-Type: application/json" \
-  -d '{
-    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-  }'
-```
+### Best Practices
 
-## Password Requirements
+1. **Secure Bot Token**
+   - Store bot token in environment variables
+   - Never expose bot token in logs or error messages
+   - Rotate bot token if compromised
 
-Passwords must meet the following criteria:
-- Minimum 8 characters
-- Maximum 100 characters
-- At least one uppercase letter (A-Z)
-- At least one lowercase letter (a-z)
-- At least one digit (0-9)
-- At least one special character (!@#$%^&*(),.?":{}|<>)
+2. **Validate Telegram Data**
+   - Always validate that messages come from Telegram
+   - Check webhook signatures if using webhooks
+   - Validate user data before storing
 
-**Valid Examples:**
-- `SecurePass123!`
-- `MyP@ssw0rd`
-- `Str0ng!Pass`
+3. **Handle User Data Responsibly**
+   - Only store necessary user information
+   - Comply with GDPR and data protection regulations
+   - Provide users with data deletion options
 
-**Invalid Examples:**
-- `password` (no uppercase, no digit, no special char)
-- `PASSWORD123` (no lowercase, no special char)
-- `Pass123` (too short, no special char)
+## Troubleshooting
 
-## Token Lifecycle
+### Bot Not Responding
 
-### Access Token
-- **Lifetime:** 15 minutes
-- **Purpose:** Authenticate API requests
-- **Storage:** Memory or secure storage (not localStorage)
-- **Usage:** Include in Authorization header for every API call
+**Possible Causes:**
+- Bot token is incorrect or expired
+- Bot is not running (check application logs)
+- Network connectivity issues
+- Telegram API is down
 
-### Refresh Token
-- **Lifetime:** 7 days
-- **Purpose:** Obtain new access tokens
-- **Storage:** Secure HTTP-only cookie or secure storage
-- **Usage:** Exchange for new access token when it expires
+**Solutions:**
+1. Check bot token in environment variables
+2. Verify bot is running: check application logs
+3. Test bot token with Telegram API:
+   ```bash
+   curl https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getMe
+   ```
+4. Check Telegram API status
 
-## API Endpoints
+### User Not Created
 
-### POST /api/v2/auth/register
-Register a new user account.
+**Possible Causes:**
+- Database connection issues
+- Missing required fields (telegram_id)
+- Database schema not applied
 
-**Request Body:**
-```json
-{
-  "email": "user@example.com",
-  "password": "SecurePass123!",
-  "full_name": "John Doe",
-  "telegram_id": 123456789  // optional
-}
-```
+**Solutions:**
+1. Check database connection in logs
+2. Verify database schema is up to date
+3. Check that telegram_id is being passed correctly
+4. Review application logs for errors
 
-**Status Codes:**
-- `201`: User created successfully
-- `409`: Email already registered
-- `422`: Validation error (invalid email, weak password, etc.)
+### Database Validation Fails
 
-### POST /api/v2/auth/login
-Authenticate user and receive tokens.
+**Possible Causes:**
+- Email/password columns still exist in database
+- telegram_id column is nullable
+- Migration not applied
 
-**Request Body:**
-```json
-{
-  "email": "user@example.com",
-  "password": "SecurePass123!"
-}
-```
+**Solutions:**
+1. Apply the migration: `migrations/009_remove_email_auth.sql`
+2. Verify schema with:
+   ```sql
+   SELECT column_name, is_nullable 
+   FROM information_schema.columns 
+   WHERE table_name = 'users';
+   ```
+3. Ensure telegram_id is NOT NULL
 
-**Status Codes:**
-- `200`: Login successful
-- `401`: Invalid credentials
+## Development
 
-### POST /api/v2/auth/refresh
-Refresh access token using refresh token.
+### Testing the Bot Locally
 
-**Request Body:**
-```json
-{
-  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-}
-```
-
-**Status Codes:**
-- `200`: Token refreshed successfully
-- `401`: Invalid or expired refresh token
-
-### GET /api/v2/auth/me
-Get current user's profile (requires authentication).
-
-**Headers:**
-```
-Authorization: Bearer <access_token>
-```
-
-**Status Codes:**
-- `200`: Profile retrieved successfully
-- `401`: Not authenticated or invalid token
-- `404`: User not found
-
-### POST /api/v2/auth/change-password
-Change user's password (requires authentication).
-
-**Headers:**
-```
-Authorization: Bearer <access_token>
-```
-
-**Request Body:**
-```json
-{
-  "current_password": "OldPass123!",
-  "new_password": "NewPass456!"
-}
-```
-
-**Status Codes:**
-- `200`: Password changed successfully
-- `401`: Current password incorrect or not authenticated
-- `422`: New password doesn't meet requirements
-
-## Error Responses
-
-All error responses follow this format:
-
-```json
-{
-  "error": "Error message",
-  "details": {
-    // Additional error details (optional)
-  }
-}
-```
-
-**Common Errors:**
-
-### 401 Unauthorized
-```json
-{
-  "error": "Invalid or expired token"
-}
-```
-
-### 409 Conflict
-```json
-{
-  "error": "Email already registered",
-  "details": {
-    "email": "user@example.com"
-  }
-}
-```
-
-### 422 Validation Error
-```json
-{
-  "error": "Validation failed",
-  "details": {
-    "errors": {
-      "password": ["Password must contain at least one uppercase letter"]
-    }
-  }
-}
-```
-
-## Security Best Practices
-
-### For Frontend Developers
-
-1. **Store Tokens Securely**
-   - Never store tokens in localStorage (vulnerable to XSS)
-   - Use memory storage or secure HTTP-only cookies
-   - Consider using a secure token management library
-
-2. **Handle Token Expiration**
-   - Implement automatic token refresh before expiration
-   - Handle 401 errors gracefully
-   - Redirect to login when refresh token expires
-
-3. **Protect Sensitive Operations**
-   - Re-authenticate for sensitive actions (password change, etc.)
-   - Implement CSRF protection
-   - Use HTTPS in production
-
-4. **Logout Properly**
-   - Clear all tokens from storage
-   - Invalidate refresh token on server (if implemented)
-   - Redirect to login page
-
-### For Backend Developers
-
-1. **Protect Endpoints**
-   ```python
-   from app.api.deps import get_current_user_id, get_current_user
-   
-   @router.get("/protected")
-   async def protected_route(
-       user_id: Annotated[str, Depends(get_current_user_id)]
-   ):
-       return {"user_id": user_id}
+1. Set up environment variables:
+   ```bash
+   export TELEGRAM_BOT_TOKEN="your-bot-token"
+   export SUPABASE_URL="your-supabase-url"
+   export SUPABASE_SERVICE_KEY="your-service-key"
    ```
 
-2. **Optional Authentication**
-   ```python
-   from app.api.deps import get_optional_user_id
-   
-   @router.get("/public")
-   async def public_route(
-       user_id: Annotated[Optional[str], Depends(get_optional_user_id)]
-   ):
-       if user_id:
-           return {"message": f"Hello user {user_id}"}
-       return {"message": "Hello anonymous"}
+2. Run the application:
+   ```bash
+   cd backend
+   python -m uvicorn app.web.main:app --reload
    ```
 
-3. **Require Email Verification**
-   ```python
-   from app.api.deps import require_verified_email
-   
-   @router.post("/sensitive")
-   async def sensitive_action(
-       user: Annotated[dict, Depends(require_verified_email)]
-   ):
-       return {"message": "Action performed"}
-   ```
+3. Send a message to your bot in Telegram
 
-## Testing Authentication
+4. Check logs to see user creation and message processing
 
-### Using cURL
+### Bot Handlers
 
-```bash
-# 1. Register
-REGISTER_RESPONSE=$(curl -s -X POST http://localhost:8000/api/v2/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"Test123!","full_name":"Test User"}')
+Bot handlers are located in `backend/app/bot/handlers/`:
+- `command.py` - Command handlers (/start, /help, etc.)
+- `message.py` - Text message handlers
+- `sleep.py` - Sleep tracking handlers
 
-# 2. Login
-LOGIN_RESPONSE=$(curl -s -X POST http://localhost:8000/api/v2/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"Test123!"}')
+## API Integration (Optional)
 
-# 3. Extract access token
-ACCESS_TOKEN=$(echo $LOGIN_RESPONSE | jq -r '.tokens.access_token')
-
-# 4. Access protected endpoint
-curl -X GET http://localhost:8000/api/v2/auth/me \
-  -H "Authorization: Bearer $ACCESS_TOKEN"
-```
-
-### Using Python
+If you need to integrate with the API programmatically, you can use Telegram ID for authentication:
 
 ```python
 import requests
 
-BASE_URL = "http://localhost:8000/api/v2/auth"
-
-# Register
-response = requests.post(f"{BASE_URL}/register", json={
-    "email": "test@example.com",
-    "password": "Test123!",
-    "full_name": "Test User"
-})
-print(f"Register: {response.status_code}")
-
-# Login
-response = requests.post(f"{BASE_URL}/login", json={
-    "email": "test@example.com",
-    "password": "Test123!"
-})
-tokens = response.json()["tokens"]
-access_token = tokens["access_token"]
-
-# Access protected endpoint
-headers = {"Authorization": f"Bearer {access_token}"}
-response = requests.get(f"{BASE_URL}/me", headers=headers)
-print(f"Profile: {response.json()}")
+# Get user by Telegram ID
+telegram_id = 123456789
+response = requests.get(
+    f"http://localhost:8000/api/users/telegram/{telegram_id}"
+)
+user = response.json()
+print(f"User: {user['full_name']}")
 ```
 
-## Migration from Legacy Auth
-
-The new authentication system is available at `/api/v2/auth/*` endpoints.
-Legacy endpoints at `/api/auth/*` will be deprecated in a future release.
-
-**Migration Steps:**
-
-1. Update frontend to use new endpoints (`/api/v2/auth/*`)
-2. Update token storage to use secure methods
-3. Implement automatic token refresh
-4. Test all authentication flows
-5. Remove legacy auth code
-
-## Troubleshooting
-
-### "Invalid or expired token"
-- Token has expired (access tokens expire after 15 minutes)
-- Token is malformed or corrupted
-- JWT secret key changed on server
-- **Solution:** Refresh the access token or login again
-
-### "Email already registered"
-- User with this email already exists
-- **Solution:** Use a different email or login with existing account
-
-### "Password must contain..."
-- Password doesn't meet security requirements
-- **Solution:** Follow password requirements listed above
-
-### "Not authenticated"
-- No Authorization header provided
-- Authorization header format is incorrect
-- **Solution:** Include `Authorization: Bearer <token>` header
-
-## Configuration
-
-Authentication settings are configured via environment variables:
-
-```env
-# JWT Configuration
-JWT_SECRET_KEY=your-secret-key-min-32-chars  # Required
-JWT_ALGORITHM=HS256                          # Optional (default: HS256)
-JWT_ACCESS_TOKEN_EXPIRE_MINUTES=15           # Optional (default: 15)
-JWT_REFRESH_TOKEN_EXPIRE_DAYS=7              # Optional (default: 7)
-```
-
-**Generate a secure JWT secret:**
-```bash
-openssl rand -hex 32
-```
+**Note:** API endpoints for Telegram authentication can be added as needed in `backend/app/api/routers/`.
 
 ## Support
 
 For issues or questions:
-1. Check this documentation
-2. Review API documentation at `/docs`
-3. Check application logs
+1. Check application logs in `backend/logs/`
+2. Review Telegram bot documentation: https://core.telegram.org/bots
+3. Check database schema and migrations
 4. Contact the development team

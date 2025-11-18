@@ -1,110 +1,20 @@
-"""Security utilities for authentication and authorization."""
+"""Security utilities for Telegram-based authentication.
 
-import re
+Note: This module has been simplified to remove email/password authentication.
+The application uses only Telegram-based authentication via telegram_id.
+JWT token functions are kept for potential future use with Telegram authentication.
+"""
+
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from app.core.config import settings
 
 
 # ============================================================================
-# Password Hashing
-# ============================================================================
-
-# Configure password hashing context with bcrypt
-pwd_context = CryptContext(
-    schemes=["bcrypt"],
-    deprecated="auto",
-    bcrypt__rounds=12,  # Cost factor for bcrypt
-)
-
-
-def hash_password(password: str) -> str:
-    """Hash a password using bcrypt.
-    
-    Args:
-        password: Plain text password to hash
-        
-    Returns:
-        Hashed password string
-        
-    Example:
-        >>> hashed = hash_password("MySecurePassword123!")
-        >>> print(hashed)
-        $2b$12$...
-    """
-    return pwd_context.hash(password)
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its hash.
-    
-    Args:
-        plain_password: Plain text password to verify
-        hashed_password: Hashed password to compare against
-        
-    Returns:
-        True if password matches, False otherwise
-        
-    Example:
-        >>> hashed = hash_password("MyPassword123!")
-        >>> verify_password("MyPassword123!", hashed)
-        True
-        >>> verify_password("WrongPassword", hashed)
-        False
-    """
-    return pwd_context.verify(plain_password, hashed_password)
-
-
-def validate_password_strength(password: str) -> tuple[bool, Optional[str]]:
-    """Validate password strength according to security requirements.
-    
-    Requirements:
-    - Minimum 8 characters
-    - Maximum 100 characters
-    - At least one uppercase letter
-    - At least one lowercase letter
-    - At least one digit
-    - At least one special character
-    
-    Args:
-        password: Password to validate
-        
-    Returns:
-        Tuple of (is_valid, error_message)
-        
-    Example:
-        >>> validate_password_strength("weak")
-        (False, "Password must be at least 8 characters long")
-        >>> validate_password_strength("StrongPass123!")
-        (True, None)
-    """
-    if len(password) < 8:
-        return False, "Password must be at least 8 characters long"
-    
-    if len(password) > 100:
-        return False, "Password must not exceed 100 characters"
-    
-    if not re.search(r"[A-Z]", password):
-        return False, "Password must contain at least one uppercase letter"
-    
-    if not re.search(r"[a-z]", password):
-        return False, "Password must contain at least one lowercase letter"
-    
-    if not re.search(r"\d", password):
-        return False, "Password must contain at least one digit"
-    
-    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
-        return False, "Password must contain at least one special character"
-    
-    return True, None
-
-
-# ============================================================================
-# JWT Token Management
+# JWT Token Management (Optional - for Telegram auth if needed)
 # ============================================================================
 
 def create_access_token(
@@ -244,11 +154,14 @@ def verify_token(token: str, token_type: str = "access") -> Optional[str]:
 
 
 # ============================================================================
-# Token Response Helper
+# Token Response Helper (Optional - for Telegram auth if needed)
 # ============================================================================
 
 def create_token_response(user_id: str) -> dict:
     """Create a complete token response with access and refresh tokens.
+    
+    Note: This function is kept for potential future use with Telegram authentication.
+    Currently, the application uses Telegram-based authentication without JWT tokens.
     
     Args:
         user_id: User ID to create tokens for

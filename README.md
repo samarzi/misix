@@ -190,21 +190,19 @@ npm run dev
 ### Переменные окружения
 
 ```bash
-# Telegram
-TELEGRAM_BOT_TOKEN=your_token
+# Telegram (обязательно)
+TELEGRAM_BOT_TOKEN=your_token_from_botfather
 
-# Yandex
+# Yandex (обязательно)
 YANDEX_GPT_API_KEY=your_key
-YANDEX_SPEECHKIT_API_KEY=your_key
 YANDEX_FOLDER_ID=your_folder_id
 
-# Supabase
+# Supabase (обязательно)
 SUPABASE_URL=your_url
 SUPABASE_SERVICE_KEY=your_key
-
-# Security
-JWT_SECRET_KEY=your_secret
 ```
+
+> **Примечание:** Аутентификация осуществляется только через Telegram. Email/password аутентификация не используется.
 
 ---
 

@@ -232,6 +232,8 @@ class DatabaseValidator:
             test_data = {
                 "telegram_id": test_telegram_id,
                 "username": "_test_user_",
+                "first_name": "Test",
+                "last_name": "User",
                 "full_name": "Test User",
                 "language_code": "en"
             }

@@ -63,6 +63,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         # 2. Get or create user
         user_repo = get_user_repository()
+        user_id = None
         try:
             user = await user_repo.get_or_create_by_telegram_id(
                 telegram_id=user_telegram.id,
@@ -71,10 +72,13 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 last_name=user_telegram.last_name
             )
             user_id = str(user["id"])
+            logger.info(f"User loaded/created: {user_id}")
         except Exception as e:
-            # Fallback: use telegram_id as user_id if database is unavailable
-            logger.warning(f"Database unavailable, using telegram_id as user_id: {e}")
-            user_id = str(user_telegram.id)
+            # Database unavailable - continue without saving to DB
+            logger.error(f"Failed to get/create user: {e}", exc_info=True)
+            logger.warning("Continuing in fallback mode - data will not be saved")
+            # Don't use telegram_id as UUID - it will cause errors
+            user_id = None
         
         # 3. Get conversation context
         conv_service = get_conversation_service()

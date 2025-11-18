@@ -155,7 +155,20 @@ class AIService:
             # Parse JSON response
             import json
             try:
-                result = json.loads(response.strip())
+                # Clean response - remove markdown code blocks if present
+                cleaned_response = response.strip()
+                if cleaned_response.startswith("```"):
+                    # Remove opening ```
+                    cleaned_response = cleaned_response.split("```", 1)[1]
+                    # Remove language identifier if present (e.g., "json")
+                    if cleaned_response.startswith("json"):
+                        cleaned_response = cleaned_response[4:]
+                    # Remove closing ```
+                    if "```" in cleaned_response:
+                        cleaned_response = cleaned_response.split("```")[0]
+                    cleaned_response = cleaned_response.strip()
+                
+                result = json.loads(cleaned_response)
                 # Sort by confidence
                 if "intents" in result:
                     result["intents"] = sorted(
@@ -164,8 +177,8 @@ class AIService:
                         reverse=True
                     )
                 return result
-            except json.JSONDecodeError:
-                logger.warning(f"Failed to parse intent classification: {response}")
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse intent classification: {response[:100]}... Error: {e}")
                 return {"intents": []}
             
         except Exception as e:

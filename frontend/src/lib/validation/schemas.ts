@@ -11,63 +11,10 @@ import { z } from 'zod';
 // Authentication Schemas
 // ============================================================================
 
-/**
- * Password validation regex
- * - At least 8 characters
- * - At least one uppercase letter
- * - At least one lowercase letter
- * - At least one digit
- * - At least one special character
- */
-const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>])/;
-
-export const registerSchema = z.object({
-  email: z
-    .string()
-    .min(1, 'Email is required')
-    .email('Invalid email format'),
-  password: z
-    .string()
-    .min(8, 'Password must be at least 8 characters')
-    .max(100, 'Password must not exceed 100 characters')
-    .regex(passwordRegex, 'Password must contain uppercase, lowercase, digit, and special character'),
-  full_name: z
-    .string()
-    .min(1, 'Full name is required')
-    .max(200, 'Full name must not exceed 200 characters')
-    .trim(),
-  telegram_id: z.number().int().positive().optional(),
-});
-
-export type RegisterInput = z.infer<typeof registerSchema>;
-
-export const loginSchema = z.object({
-  email: z
-    .string()
-    .min(1, 'Email is required')
-    .email('Invalid email format'),
-  password: z
-    .string()
-    .min(1, 'Password is required'),
-});
-
-export type LoginInput = z.infer<typeof loginSchema>;
-
-export const changePasswordSchema = z.object({
-  current_password: z
-    .string()
-    .min(1, 'Current password is required'),
-  new_password: z
-    .string()
-    .min(8, 'New password must be at least 8 characters')
-    .max(100, 'New password must not exceed 100 characters')
-    .regex(passwordRegex, 'Password must contain uppercase, lowercase, digit, and special character'),
-}).refine((data) => data.current_password !== data.new_password, {
-  message: 'New password must be different from current password',
-  path: ['new_password'],
-});
-
-export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+// Note: Email/password authentication schemas have been removed.
+// The application uses Telegram-based authentication via the Telegram bot.
+// If you need to add validation schemas for Telegram user data in the future,
+// you can add them here.
 
 // ============================================================================
 // Task Schemas

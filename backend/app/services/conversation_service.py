@@ -58,6 +58,11 @@ class ConversationService:
             content: Message content
             telegram_id: Optional Telegram user ID
         """
+        # Skip if no user_id (fallback mode)
+        if user_id is None:
+            logger.debug("Skipping message save - no user_id (fallback mode)")
+            return
+        
         # Add to in-memory buffer
         buffer = self._get_buffer(user_id)
         buffer.append({
@@ -77,7 +82,7 @@ class ConversationService:
                 try:
                     UUID(user_id)
                     is_valid_uuid = True
-                except (ValueError, AttributeError):
+                except (ValueError, AttributeError, TypeError):
                     is_valid_uuid = False
                 
                 if is_valid_uuid:

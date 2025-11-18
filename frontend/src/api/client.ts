@@ -87,11 +87,40 @@ const client = axios.create({
   },
 });
 
+// Request interceptor to add user_id from localStorage
+client.interceptors.request.use(
+  (config) => {
+    const userId = localStorage.getItem('misix_user_id');
+    if (userId && config.params) {
+      // Add user_id to query params if not already present
+      if (!config.params.user_id) {
+        config.params.user_id = userId;
+      }
+    } else if (userId) {
+      // Initialize params if not present
+      config.params = { user_id: userId };
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// Response interceptor for error handling
 client.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response) {
       console.error('API error', error.response.status, error.response.data);
+      
+      // Handle authentication errors
+      if (error.response.status === 401) {
+        // Clear stored user data
+        localStorage.removeItem('misix_user_id');
+        // Optionally redirect to login or show error
+        console.error('Authentication failed - please re-authenticate');
+      }
     } else {
       console.error('Network error', error);
     }

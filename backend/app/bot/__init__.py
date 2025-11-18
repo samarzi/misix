@@ -6,10 +6,11 @@ from app.shared.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Initialize application, scheduler, and polling manager as None
+# Initialize application, scheduler, polling manager, and webhook manager as None
 application = None
 scheduler = None
 polling_manager = None
+webhook_manager = None
 
 def _create_application():
     """Create and configure Telegram application."""
@@ -127,3 +128,46 @@ def get_polling_manager():
             except Exception as e:
                 logger.error(f"Failed to initialize polling manager: {e}", exc_info=True)
     return polling_manager
+
+
+def get_webhook_manager():
+    """Get or create the webhook manager."""
+    global webhook_manager
+    if webhook_manager is None:
+        app = get_application()
+        if app:
+            try:
+                from .webhook import WebhookManager
+                webhook_manager = WebhookManager(app)
+                logger.info("Webhook manager initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize webhook manager: {e}", exc_info=True)
+    return webhook_manager
+
+
+def get_webhook_url() -> str:
+    """Determine webhook URL from configuration.
+    
+    Priority:
+    1. TELEGRAM_WEBHOOK_URL environment variable (explicit)
+    2. BACKEND_BASE_URL + /bot/webhook (derived)
+    
+    Returns:
+        Webhook URL or empty string if not configured
+    """
+    # Check explicit webhook URL
+    webhook_url = settings.telegram_webhook_url
+    
+    if webhook_url:
+        logger.debug(f"Using explicit TELEGRAM_WEBHOOK_URL: {webhook_url}")
+        return webhook_url
+    
+    # Derive from backend base URL
+    backend_url = settings.backend_base_url
+    if backend_url:
+        webhook_url = f"{backend_url}/bot/webhook"
+        logger.debug(f"Derived webhook URL from BACKEND_BASE_URL: {webhook_url}")
+        return webhook_url
+    
+    logger.warning("No webhook URL configured (TELEGRAM_WEBHOOK_URL or BACKEND_BASE_URL)")
+    return ""

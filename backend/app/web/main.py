@@ -17,7 +17,14 @@ from app.shared.config import settings
 from app.shared.supabase import get_supabase_client, supabase_available
 
 # Import Telegram bot functions
-from app.bot import get_application, start_bot_with_scheduler, stop_bot_with_scheduler, get_polling_manager
+from app.bot import (
+    get_application,
+    start_bot_with_scheduler,
+    stop_bot_with_scheduler,
+    get_polling_manager,
+    get_webhook_manager,
+    get_webhook_url
+)
 from app.bot.polling import should_use_polling
 
 # Import API routers (legacy)
@@ -172,10 +179,20 @@ async def lifespan(app: FastAPI):
                 logger.error(f"⚠️  Failed to start scheduler: {e}", exc_info=True)
                 logger.warning("Continuing without scheduler - reminders will not work")
             
-            # Start polling if webhook is not configured
+            # Setup webhook or polling based on configuration
             try:
                 if should_use_polling():
                     logger.info("🔄 Webhook not configured, starting polling...")
+                    
+                    # Delete any existing webhook first
+                    webhook_mgr = get_webhook_manager()
+                    if webhook_mgr:
+                        webhook_info = await webhook_mgr.get_webhook_info()
+                        if webhook_info and webhook_info.url:
+                            logger.info(f"🗑️  Removing existing webhook: {webhook_info.url}")
+                            await webhook_mgr.delete_webhook()
+                    
+                    # Start polling
                     polling_mgr = get_polling_manager()
                     if polling_mgr:
                         await polling_mgr.start_polling()
@@ -183,10 +200,48 @@ async def lifespan(app: FastAPI):
                     else:
                         logger.error("❌ Failed to get polling manager")
                 else:
-                    logger.info("ℹ️  Webhook configured, polling not needed")
+                    logger.info("🌐 Webhook mode detected, setting up webhook...")
+                    
+                    # Stop polling if it's running
+                    polling_mgr = get_polling_manager()
+                    if polling_mgr and polling_mgr.is_running:
+                        logger.info("🛑 Stopping polling before webhook setup...")
+                        await polling_mgr.stop_polling()
+                    
+                    # Get webhook URL
+                    webhook_url = get_webhook_url()
+                    if not webhook_url:
+                        logger.error("❌ Webhook URL not configured, cannot set webhook")
+                        logger.warning("⚠️  Bot will not receive messages. Set TELEGRAM_WEBHOOK_URL or BACKEND_BASE_URL")
+                    else:
+                        # Setup webhook
+                        webhook_mgr = get_webhook_manager()
+                        if webhook_mgr:
+                            # Check current webhook status
+                            current_info = await webhook_mgr.get_webhook_info()
+                            if current_info:
+                                logger.info(
+                                    f"📡 Current webhook: {current_info.url or 'none'} "
+                                    f"(pending: {current_info.pending_update_count})"
+                                )
+                            
+                            # Set webhook
+                            result = await webhook_mgr.set_webhook(webhook_url)
+                            
+                            if result.success:
+                                logger.info(f"✅ Webhook set successfully: {result.webhook_url}")
+                                if result.pending_updates_processed > 0:
+                                    logger.info(
+                                        f"📨 Processed {result.pending_updates_processed} pending updates"
+                                    )
+                            else:
+                                logger.error(f"❌ Failed to set webhook: {result.error_message}")
+                                logger.warning("⚠️  Bot will not receive messages via webhook")
+                        else:
+                            logger.error("❌ Failed to get webhook manager")
             except Exception as e:
-                logger.error(f"⚠️  Failed to start polling: {e}", exc_info=True)
-                logger.warning("Continuing without polling - bot will not receive messages")
+                logger.error(f"⚠️  Failed to setup bot communication: {e}", exc_info=True)
+                logger.warning("Continuing without bot communication - bot will not receive messages")
             
             logger.info("✅ Phase 3 complete: Telegram bot initialized")
         
@@ -208,7 +263,7 @@ async def lifespan(app: FastAPI):
     # ========================================================================
     logger.info("🛑 Shutting down MISIX application...")
     
-    # Stop polling first
+    # Stop polling if running
     try:
         polling_mgr = get_polling_manager()
         if polling_mgr and polling_mgr.is_running:
@@ -216,6 +271,16 @@ async def lifespan(app: FastAPI):
             logger.info("✅ Polling stopped")
     except Exception as e:
         logger.error(f"⚠️  Error stopping polling: {e}")
+    
+    # Optionally delete webhook on shutdown (commented out by default)
+    # Keeping webhook allows bot to queue messages during restarts
+    # try:
+    #     webhook_mgr = get_webhook_manager()
+    #     if webhook_mgr and webhook_mgr.is_set:
+    #         await webhook_mgr.delete_webhook()
+    #         logger.info("✅ Webhook deleted")
+    # except Exception as e:
+    #     logger.error(f"⚠️  Error deleting webhook: {e}")
     
     # Stop scheduler
     try:

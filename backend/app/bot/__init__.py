@@ -6,9 +6,10 @@ from app.shared.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Initialize application and scheduler as None
+# Initialize application, scheduler, and polling manager as None
 application = None
 scheduler = None
+polling_manager = None
 
 def _create_application():
     """Create and configure Telegram application."""
@@ -111,3 +112,18 @@ def stop_bot_with_scheduler():
             logger.info("Bot scheduler stopped")
         except Exception as e:
             logger.error(f"Failed to stop scheduler: {e}", exc_info=True)
+
+
+def get_polling_manager():
+    """Get or create the polling manager."""
+    global polling_manager
+    if polling_manager is None:
+        app = get_application()
+        if app:
+            try:
+                from .polling import PollingManager
+                polling_manager = PollingManager(app)
+                logger.info("Polling manager initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize polling manager: {e}", exc_info=True)
+    return polling_manager

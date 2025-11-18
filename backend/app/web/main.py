@@ -17,7 +17,8 @@ from app.shared.config import settings
 from app.shared.supabase import get_supabase_client, supabase_available
 
 # Import Telegram bot functions
-from app.bot import get_application, start_bot_with_scheduler, stop_bot_with_scheduler
+from app.bot import get_application, start_bot_with_scheduler, stop_bot_with_scheduler, get_polling_manager
+from app.bot.polling import should_use_polling
 
 # Import new auth router
 from app.api.routers.auth import router as new_auth_router
@@ -174,6 +175,22 @@ async def lifespan(app: FastAPI):
                 logger.error(f"⚠️  Failed to start scheduler: {e}", exc_info=True)
                 logger.warning("Continuing without scheduler - reminders will not work")
             
+            # Start polling if webhook is not configured
+            try:
+                if should_use_polling():
+                    logger.info("🔄 Webhook not configured, starting polling...")
+                    polling_mgr = get_polling_manager()
+                    if polling_mgr:
+                        await polling_mgr.start_polling()
+                        logger.info("✅ Polling started successfully")
+                    else:
+                        logger.error("❌ Failed to get polling manager")
+                else:
+                    logger.info("ℹ️  Webhook configured, polling not needed")
+            except Exception as e:
+                logger.error(f"⚠️  Failed to start polling: {e}", exc_info=True)
+                logger.warning("Continuing without polling - bot will not receive messages")
+            
             logger.info("✅ Phase 3 complete: Telegram bot initialized")
         
         except Exception as e:
@@ -193,6 +210,15 @@ async def lifespan(app: FastAPI):
     # SHUTDOWN
     # ========================================================================
     logger.info("🛑 Shutting down MISIX application...")
+    
+    # Stop polling first
+    try:
+        polling_mgr = get_polling_manager()
+        if polling_mgr and polling_mgr.is_running:
+            await polling_mgr.stop_polling()
+            logger.info("✅ Polling stopped")
+    except Exception as e:
+        logger.error(f"⚠️  Error stopping polling: {e}")
     
     # Stop scheduler
     try:

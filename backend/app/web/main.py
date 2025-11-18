@@ -20,9 +20,6 @@ from app.shared.supabase import get_supabase_client, supabase_available
 from app.bot import get_application, start_bot_with_scheduler, stop_bot_with_scheduler, get_polling_manager
 from app.bot.polling import should_use_polling
 
-# Import new auth router
-from app.api.routers.auth import router as new_auth_router
-
 # Import API routers (legacy)
 from .routers import (
     auth_router,
@@ -479,10 +476,9 @@ def create_app() -> FastAPI:
             logger.error(f"Get messages API error: {e}")
             return {"error": "Failed to get messages"}
 
-    # Authentication (New secure implementation)
-    app.include_router(new_auth_router, prefix="/api/v2/auth", tags=["auth-v2"])
-    
     # Authentication (Legacy - will be deprecated)
+    # Note: Email authentication has been removed. Only Telegram auth is used.
+    # If you need API authentication, implement Telegram-based auth endpoints.
     app.include_router(auth_router, prefix="/api/auth", tags=["auth-legacy"])
 
     # Web API endpoints

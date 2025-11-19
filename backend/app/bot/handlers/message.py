@@ -24,23 +24,36 @@ VOICE_TRANSCRIPTION_TIMEOUT = 30  # seconds
 def create_mock_text_update(voice_update: Update, text: str) -> Update:
     """Create mock text update from voice update for processing.
     
+    Creates a new Update object with a text message instead of modifying
+    the original immutable Telegram objects.
+    
     Args:
         voice_update: Original update with voice message
         text: Transcribed text
         
     Returns:
-        Mock update with text message
+        New update with text message
     """
-    # Create a copy of the update
-    mock_update = copy.copy(voice_update)
+    from telegram import Message as TelegramMessage, Chat, User
     
-    # Create a copy of the message and set text
-    mock_message = copy.copy(voice_update.message)
-    mock_message.text = text
-    mock_message.voice = None
+    # Get original message data
+    original_msg = voice_update.message
     
-    # Set the mock message
-    mock_update.message = mock_message
+    # Create new Message object with text (set during construction)
+    # We need to provide all required fields for Message
+    mock_message = TelegramMessage(
+        message_id=original_msg.message_id,
+        date=original_msg.date,
+        chat=original_msg.chat,
+        from_user=original_msg.from_user,
+        text=text,  # Set text during construction
+    )
+    
+    # Create new Update with the new message
+    mock_update = Update(
+        update_id=voice_update.update_id,
+        message=mock_message,
+    )
     
     return mock_update
 
@@ -80,17 +93,25 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             # Don't use telegram_id as UUID - it will cause errors
             user_id = None
         
-        # 3. Get conversation context
+        # 3. Get conversation context (skip if no user_id)
         conv_service = get_conversation_service()
-        conversation_context = await conv_service.get_conversation_context(user_id)
+        if user_id is not None:
+            conversation_context = await conv_service.get_conversation_context(user_id)
+        else:
+            # Fallback mode: no conversation history
+            conversation_context = []
+            logger.info("Using empty conversation context (fallback mode)")
         
-        # 4. Save user message to history
-        await conv_service.add_message(
-            user_id=user_id,
-            role="user",
-            content=message_text,
-            telegram_id=user_telegram.id
-        )
+        # 4. Save user message to history (skip if no user_id)
+        if user_id is not None:
+            await conv_service.add_message(
+                user_id=user_id,
+                role="user",
+                content=message_text,
+                telegram_id=user_telegram.id
+            )
+        else:
+            logger.info("Skipping message save (fallback mode)")
         
         # 5. NEW: Classify intents
         ai_service = get_ai_service()
@@ -130,13 +151,16 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         logger.info(f"Generated response for user {user_telegram.id} (length: {len(response)})")
         
-        # 9. Save assistant response to history
-        await conv_service.add_message(
-            user_id=user_id,
-            role="assistant",
-            content=response,
-            telegram_id=user_telegram.id
-        )
+        # 9. Save assistant response to history (skip if no user_id)
+        if user_id is not None:
+            await conv_service.add_message(
+                user_id=user_id,
+                role="assistant",
+                content=response,
+                telegram_id=user_telegram.id
+            )
+        else:
+            logger.info("Skipping response save (fallback mode)")
         
         # 10. Send reply to user
         await update.message.reply_text(response)

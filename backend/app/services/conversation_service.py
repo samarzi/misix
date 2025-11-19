@@ -45,7 +45,7 @@ class ConversationService:
     
     async def add_message(
         self,
-        user_id: str,
+        user_id: Optional[str],
         role: str,
         content: str,
         telegram_id: Optional[int] = None,
@@ -53,14 +53,14 @@ class ConversationService:
         """Add message to conversation history.
         
         Args:
-            user_id: User ID
+            user_id: User ID (can be None in fallback mode)
             role: Message role (user or assistant)
             content: Message content
             telegram_id: Optional Telegram user ID
         """
         # Skip if no user_id (fallback mode)
         if user_id is None:
-            logger.debug("Skipping message save - no user_id (fallback mode)")
+            logger.warning("Skipping message save - no user_id (fallback mode)")
             return
         
         # Add to in-memory buffer
@@ -150,17 +150,22 @@ class ConversationService:
             logger.error(f"Failed to get recent messages: {e}")
             return list(self._get_buffer(user_id))
     
-    async def get_conversation_context(self, user_id: str) -> str:
+    async def get_conversation_context(self, user_id: Optional[str]) -> str:
         """Get conversation context for AI.
         
         This includes recent messages and any stored summary.
         
         Args:
-            user_id: User ID
+            user_id: User ID (can be None in fallback mode)
             
         Returns:
-            Context string
+            Context string (empty if user_id is None)
         """
+        # Return empty context in fallback mode
+        if user_id is None:
+            logger.debug("No conversation context - fallback mode")
+            return ""
+        
         # Get summary if available
         summary = await self._get_latest_summary(user_id)
         
@@ -181,15 +186,19 @@ class ConversationService:
         
         return "\n".join(context_parts)
     
-    async def _get_latest_summary(self, user_id: str) -> Optional[str]:
+    async def _get_latest_summary(self, user_id: Optional[str]) -> Optional[str]:
         """Get latest conversation summary.
         
         Args:
-            user_id: User ID
+            user_id: User ID (can be None in fallback mode)
             
         Returns:
             Summary text or None
         """
+        # Return None in fallback mode
+        if user_id is None:
+            return None
+        
         # Check cache first
         if user_id in self._summary_cache:
             return self._summary_cache[user_id]

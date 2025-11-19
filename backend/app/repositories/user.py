@@ -15,6 +15,46 @@ class UserRepository(BaseRepository):
     def __init__(self):
         super().__init__("users")
     
+    @staticmethod
+    def _generate_full_name(
+        first_name: Optional[str],
+        last_name: Optional[str],
+        username: Optional[str]
+    ) -> str:
+        """Generate full_name from available user data.
+        
+        Priority:
+        1. first_name + last_name (if both provided)
+        2. first_name only (if only first_name)
+        3. last_name only (if only last_name)
+        4. username (if names are null)
+        5. "Telegram User" (fallback if all are null)
+        
+        Args:
+            first_name: User's first name
+            last_name: User's last name
+            username: User's Telegram username
+            
+        Returns:
+            Generated full name (never null)
+        """
+        # Build name from first_name and last_name
+        name_parts = []
+        if first_name and first_name.strip():
+            name_parts.append(first_name.strip())
+        if last_name and last_name.strip():
+            name_parts.append(last_name.strip())
+        
+        if name_parts:
+            return " ".join(name_parts)
+        
+        # Fallback to username
+        if username and username.strip():
+            return username.strip()
+        
+        # Final fallback
+        return "Telegram User"
+    
     async def get_by_email(self, email: str) -> Optional[dict]:
         """Get user by email address.
         
@@ -126,13 +166,16 @@ class UserRepository(BaseRepository):
             logger.info(f"Found existing user for telegram_id {telegram_id}")
             return user
         
-        # Create new user
+        # Create new user with generated full_name
         logger.info(f"Creating new user for telegram_id {telegram_id}")
+        full_name = self._generate_full_name(first_name, last_name, username)
+        
         user_data = {
             "telegram_id": telegram_id,
             "username": username,
             "first_name": first_name,
             "last_name": last_name,
+            "full_name": full_name,  # Always provide full_name
         }
         
         return await self.create(user_data)

@@ -489,43 +489,52 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
         
         action = query.data
         
+        logger.info(f"Processing callback action: {action} from user {query.from_user.id}")
+        
         # Route to appropriate handler
         if action == "help":
             await query.message.reply_text(HELP_MESSAGE, parse_mode="Markdown")
             logger.info(f"User {query.from_user.id} requested help via button")
             
         elif action == "tasks":
-            # Create fake update for tasks command
-            fake_update = Update(
-                update_id=update.update_id,
-                message=query.message
-            )
-            await handle_tasks_command(fake_update, context)
+            # Call handler directly with callback query context
+            try:
+                await _handle_tasks_for_callback(query, context)
+            except Exception as e:
+                logger.error(f"Failed to handle tasks callback: {e}", exc_info=True)
+                await query.message.reply_text(
+                    "Не удалось загрузить задачи. Попробуйте команду /tasks"
+                )
             
         elif action == "finances":
-            fake_update = Update(
-                update_id=update.update_id,
-                message=query.message
-            )
-            await handle_finances_command(fake_update, context)
+            try:
+                await _handle_finances_for_callback(query, context)
+            except Exception as e:
+                logger.error(f"Failed to handle finances callback: {e}", exc_info=True)
+                await query.message.reply_text(
+                    "Не удалось загрузить финансы. Попробуйте команду /finances"
+                )
             
         elif action == "mood":
-            fake_update = Update(
-                update_id=update.update_id,
-                message=query.message
-            )
-            await handle_mood_command(fake_update, context)
+            try:
+                await _handle_mood_for_callback(query, context)
+            except Exception as e:
+                logger.error(f"Failed to handle mood callback: {e}", exc_info=True)
+                await query.message.reply_text(
+                    "Не удалось загрузить настроение. Попробуйте команду /mood"
+                )
             
         elif action == "sleep":
-            # Import sleep handler
-            from app.bot.handlers.sleep import handle_sleep_start
-            fake_update = Update(
-                update_id=update.update_id,
-                message=query.message
-            )
-            await handle_sleep_start(fake_update, context)
+            try:
+                from app.bot.handlers.sleep import handle_sleep_start_callback
+                await handle_sleep_start_callback(query, context)
+            except Exception as e:
+                logger.error(f"Failed to handle sleep callback: {e}", exc_info=True)
+                await query.message.reply_text(
+                    "Не удалось начать трекинг сна. Попробуйте команду /sleep"
+                )
         
-        logger.info(f"Processed quick action callback: {action}")
+        logger.info(f"Successfully processed callback action: {action}")
         
     except Exception as e:
         logger.error(f"Failed to handle quick action callback: {e}", exc_info=True)
@@ -533,3 +542,169 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
             await update.callback_query.answer("Произошла ошибка. Попробуйте позже.")
         except:
             pass
+
+
+async def _handle_tasks_for_callback(query, context):
+    """Handle tasks command from callback query."""
+    from app.repositories.user import get_user_repository
+    from app.services.task_service import get_task_service
+    
+    user_telegram = query.from_user
+    
+    # Get user
+    user_repo = get_user_repository()
+    user = await user_repo.get_by_telegram_id(user_telegram.id)
+    
+    if not user:
+        await query.message.reply_text(
+            "Сначала отправьте мне любое сообщение, чтобы я вас зарегистрировал."
+        )
+        return
+    
+    # Get tasks
+    task_service = get_task_service()
+    tasks = await task_service.get_by_user(str(user["id"]))
+    
+    if not tasks:
+        await query.message.reply_text(
+            "📋 У вас пока нет задач.\n\nСоздайте задачу, написав мне, например:\n\"Напомни завтра купить молоко\""
+        )
+        return
+    
+    # Format tasks
+    active_tasks = [t for t in tasks if t.get("status") != "completed"]
+    completed_tasks = [t for t in tasks if t.get("status") == "completed"]
+    
+    message = "📋 **Ваши задачи:**\n\n"
+    
+    if active_tasks:
+        message += "**Активные:**\n"
+        for task in active_tasks[:10]:
+            title = task.get("title", "Без названия")
+            deadline = task.get("deadline")
+            priority = task.get("priority", "medium")
+            
+            priority_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(priority, "⚪")
+            
+            message += f"{priority_emoji} {title}"
+            if deadline:
+                from datetime import datetime
+                if isinstance(deadline, str):
+                    deadline = datetime.fromisoformat(deadline.replace('Z', '+00:00'))
+                message += f" (до {deadline.strftime('%d.%m')})"
+            message += "\n"
+    
+    if completed_tasks:
+        message += f"\n✅ Выполнено: {len(completed_tasks)}"
+    
+    await query.message.reply_text(message, parse_mode="Markdown")
+
+
+async def _handle_finances_for_callback(query, context):
+    """Handle finances command from callback query."""
+    from app.repositories.user import get_user_repository
+    from app.services.finance_service import get_finance_service
+    
+    user_telegram = query.from_user
+    
+    # Get user
+    user_repo = get_user_repository()
+    user = await user_repo.get_by_telegram_id(user_telegram.id)
+    
+    if not user:
+        await query.message.reply_text(
+            "Сначала отправьте мне любое сообщение, чтобы я вас зарегистрировал."
+        )
+        return
+    
+    # Get finances
+    finance_service = get_finance_service()
+    records = await finance_service.get_by_user(str(user["id"]))
+    
+    if not records:
+        await query.message.reply_text(
+            "💰 У вас пока нет финансовых записей.\n\nДобавьте расход, написав:\n\"Потратил 500₽ на кофе\""
+        )
+        return
+    
+    # Calculate stats
+    total_expenses = sum(r.get("amount", 0) for r in records if r.get("type") == "expense")
+    total_income = sum(r.get("amount", 0) for r in records if r.get("type") == "income")
+    balance = total_income - total_expenses
+    
+    # Group by category
+    from collections import defaultdict
+    expenses_by_category = defaultdict(float)
+    for r in records:
+        if r.get("type") == "expense":
+            category = r.get("category", "другое")
+            expenses_by_category[category] += r.get("amount", 0)
+    
+    message = "💰 **Финансовая сводка:**\n\n"
+    message += f"💸 Расходы: {total_expenses:,.0f}₽\n"
+    message += f"💵 Доходы: {total_income:,.0f}₽\n"
+    message += f"{'📈' if balance >= 0 else '📉'} Баланс: {balance:+,.0f}₽\n"
+    
+    if expenses_by_category:
+        message += "\n**По категориям:**\n"
+        sorted_categories = sorted(expenses_by_category.items(), key=lambda x: x[1], reverse=True)
+        for category, amount in sorted_categories[:5]:
+            message += f"• {category}: {amount:,.0f}₽\n"
+    
+    await query.message.reply_text(message, parse_mode="Markdown")
+
+
+async def _handle_mood_for_callback(query, context):
+    """Handle mood command from callback query."""
+    from app.repositories.user import get_user_repository
+    from app.services.mood_service import get_mood_service
+    
+    user_telegram = query.from_user
+    
+    # Get user
+    user_repo = get_user_repository()
+    user = await user_repo.get_by_telegram_id(user_telegram.id)
+    
+    if not user:
+        await query.message.reply_text(
+            "Сначала отправьте мне любое сообщение, чтобы я вас зарегистрировал."
+        )
+        return
+    
+    # Get mood history
+    mood_service = get_mood_service()
+    history = await mood_service.get_mood_history(str(user["id"]), days=7)
+    
+    if not history:
+        await query.message.reply_text(
+            "😊 У вас пока нет записей о настроении.\n\nРасскажите как вы себя чувствуете!"
+        )
+        return
+    
+    # Get trends
+    trends = await mood_service.analyze_mood_trends(str(user["id"]), days=7)
+    
+    mood_emojis = {
+        "happy": "😊",
+        "sad": "😢",
+        "anxious": "😰",
+        "calm": "😌",
+        "excited": "🤩",
+        "tired": "😴",
+        "stressed": "😫",
+        "angry": "😠",
+        "neutral": "😐"
+    }
+    
+    message = "😊 **Ваше настроение (последние 7 дней):**\n\n"
+    message += f"📊 Средняя интенсивность: {trends.average_intensity:.1f}/10\n"
+    message += f"🎯 Чаще всего: {mood_emojis.get(trends.most_common_mood, '😊')} {trends.most_common_mood}\n"
+    
+    message += "\n**Последние записи:**\n"
+    for entry in history[:5]:
+        mood = entry.get("mood", "")
+        intensity = entry.get("intensity", 5)
+        emoji = mood_emojis.get(mood, "😊")
+        message += f"{emoji} {mood} ({intensity}/10)\n"
+    
+    await query.message.reply_text(message, parse_mode="Markdown")

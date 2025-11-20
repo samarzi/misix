@@ -1,0 +1,4 @@
+# file: /Users/samarzi/Desktop/IT/D E M O/misix/backend/app/web/routers/auth.py
+# hypothesis_version: 6.148.2
+
+['*', '/login', '/me', '/register', 'Bearer', 'Failed to get user', 'Login failed', 'Registration failed', 'Update failed', 'User not found', 'WWW-Authenticate', 'auth/login', 'auto', 'bcrypt', 'bearer', 'bio', 'email', 'exp', 'full_name', 'id', 'now()', 'password_hash', 'sub', 'telegram_id', 'updated_at', 'username', 'users']

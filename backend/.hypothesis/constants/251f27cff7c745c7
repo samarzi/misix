@@ -1,0 +1,4 @@
+# file: /Users/samarzi/Desktop/IT/D E M O/misix/backend/app/shared/supabase.py
+# hypothesis_version: 6.148.2
+
+['assistant_messages', 'assistant_sessions', 'content', 'example.com', 'full_name', 'language_code', 'new', 'notes', 'replace-with', 'role', 'session_id', 'source', 'status', 'tasks', 'telegram', 'telegram_id', 'title', 'username', 'users', 'your-project']

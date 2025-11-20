@@ -1,0 +1,4 @@
+# file: /Users/samarzi/Desktop/IT/D E M O/misix/backend/app/repositories/user.py
+# hypothesis_version: 6.148.2
+
+['*', 'email', 'email_verified', 'first_name', 'last_name', 'null', 'password_hash', 'telegram_id', 'username', 'users']

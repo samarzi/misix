@@ -1,0 +1,4 @@
+# file: /Users/samarzi/Desktop/IT/D E M O/misix/backend/app/middleware/error_handler.py
+# hypothesis_version: 6.148.2
+
+['.', 'Validation failed', 'Z', 'details', 'error', 'errors', 'loc', 'msg', 'request_id', 'timestamp', 'traceback', 'type']

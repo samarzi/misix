@@ -1,0 +1,4 @@
+# file: /Users/samarzi/Desktop/IT/D E M O/misix/backend/app/web/auth.py
+# hypothesis_version: 6.148.2
+
+['Bearer', 'WWW-Authenticate', 'auth/login', 'email', 'id', 'sub', 'users']

@@ -1,0 +1,4 @@
+# file: /Users/samarzi/Desktop/IT/D E M O/misix/backend/app/bot/yandex_gpt.py
+# hypothesis_version: 6.148.2
+
+[0.3, 512, 'Authorization', 'Content-Type', 'alternatives', 'application/json', 'completionOptions', 'maxTokens', 'message', 'messages', 'modelUri', 'result', 'stream', 'temperature', 'text', 'yandexgpt-lite']

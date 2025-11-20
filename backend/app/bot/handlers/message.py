@@ -279,3 +279,64 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
             )
         except Exception as reply_error:
             logger.error(f"Failed to send error message: {reply_error}")
+            return
+        
+        # 3. Transcribe with Yandex SpeechKit with timeout
+        try:
+            speech_kit = get_yandex_speech_kit()
+            transcription = await asyncio.wait_for(
+                speech_kit.transcribe_audio(bytes(audio_bytes)),
+                timeout=VOICE_TRANSCRIPTION_TIMEOUT
+            )
+            
+            if not transcription or not transcription.strip():
+                logger.warning("Empty transcription result")
+                await update.message.reply_text(
+                    "Не удалось распознать речь. Попробуйте говорить четче или отправьте текстом."
+                )
+                return
+            
+            logger.info(f"Transcription successful: '{transcription[:50]}...'")
+            
+        except asyncio.TimeoutError:
+            logger.error(f"Transcription timeout after {VOICE_TRANSCRIPTION_TIMEOUT}s")
+            await update.message.reply_text(
+                "Распознавание речи заняло слишком много времени. Попробуйте короче или отправьте текстом."
+            )
+            return
+        except Exception as e:
+            logger.error(f"Transcription failed: {e}")
+            await update.message.reply_text(
+                "Произошла ошибка при распознавании речи. Попробуйте позже."
+            )
+            return
+        
+        # 4. Show transcription to user
+        await update.message.reply_text(
+            f"🎤 Распознано: \"{transcription}\"\n\nОбрабатываю..."
+        )
+        
+        # 5. Process as text message
+        try:
+            mock_update = create_mock_text_update(update, transcription)
+            await handle_text_message(mock_update, context)
+        except Exception as e:
+            logger.error(f"Failed to process transcribed message: {e}")
+            await update.message.reply_text(
+                "Распознал, но не смог обработать. Попробуйте еще раз."
+            )
+        
+        # Log total processing time
+        elapsed_time = time.time() - start_time
+        logger.info(f"Voice message processed in {elapsed_time:.2f}s")
+        
+    except Exception as e:
+        # Handle any unexpected errors
+        logger.error(f"Voice message processing failed for user {update.effective_user.id}: {e}", exc_info=True)
+        
+        try:
+            await update.message.reply_text(
+                "Произошла ошибка при обработке голосового сообщения. Попробуйте позже."
+            )
+        except Exception as reply_error:
+            logger.error(f"Failed to send error message: {reply_error}")

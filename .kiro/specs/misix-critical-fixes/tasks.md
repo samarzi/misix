@@ -171,7 +171,7 @@
     - Implement useAuth hook for auth state management
     - Create authStore with Zustand
     - _Requirements: 4.1, 4.2_
-  - [-] 6.2 Update API client with JWT support
+  - [x] 6.2 Update API client with JWT support
     - Update `frontend/src/lib/api/client.ts` to include JWT token
     - Implement request interceptor to add Authorization header
     - Implement response interceptor to handle 401 errors

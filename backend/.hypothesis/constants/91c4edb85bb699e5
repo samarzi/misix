@@ -1,0 +1,4 @@
+# file: /Users/samarzi/Desktop/IT/D E M O/misix/backend/app/services/conversation_service.py
+# hypothesis_version: 6.148.2
+
+[200, 'Assistant', 'Recent messages:', 'User', 'assistant_messages', 'content', 'created_at', 'id', 'role', 'summary', 'telegram_id', 'text', 'timestamp', 'user', 'user_id']

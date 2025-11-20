@@ -1,0 +1,4 @@
+# file: /Users/samarzi/Desktop/IT/D E M O/misix/backend/app/web/routers/tasks.py
+# hypothesis_version: 6.148.2
+
+[100, 400, 404, 500, '*', '/tasks', '/tasks/public', '/tasks/{task_id}', 'Failed to fetch task', 'Filter by project', 'Invalid status value', 'No fields to update', 'Task not found', 'actual_hours', 'cancelled', 'completed', 'created_at', 'critical', 'deadline', 'description', 'estimated_hours', 'high', 'id', 'in_progress', 'low', 'medium', 'message', 'new', 'priority', 'project_id', 'status', 'tasks', 'title', 'updated_at', 'user_id', 'waiting']

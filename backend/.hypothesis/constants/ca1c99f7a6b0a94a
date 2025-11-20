@@ -1,0 +1,4 @@
+# file: /Users/samarzi/Desktop/IT/D E M O/misix/backend/app/core/logging.py
+# hypothesis_version: 6.148.2
+
+['\x1b[0m', '\x1b[31m', '\x1b[32m', '\x1b[33m', '\x1b[35m', '\x1b[36m', '%Y-%m-%d %H:%M:%S', 'CRITICAL', 'DEBUG', 'ERROR', 'INFO', 'WARNING', 'Z', 'duration_ms', 'exception', 'fastapi', 'function', 'json', 'level', 'line', 'logger', 'message', 'module', 'request_id', 'timestamp', 'user_id', 'uvicorn', 'uvicorn.access']

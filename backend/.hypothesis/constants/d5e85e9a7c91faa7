@@ -1,0 +1,4 @@
+# file: /Users/samarzi/Desktop/IT/D E M O/misix/backend/app/core/config.py
+# hypothesis_version: 6.148.2
+
+[0.0, 0.7, 1.0, 100, 1024, 2048, 8000, '  - SUPABASE_URL', '  - YANDEX_FOLDER_ID', '*', ',', '.doc', '.docx', '.env', '.jpeg', '.jpg', '.pdf', '.png', '.txt', 'Backend base URL', 'CRITICAL', 'DEBUG', 'ERROR', 'Enable debug mode', 'Enable rate limiting', 'HS256', 'INFO', 'Supabase project URL', 'WARNING', 'Yandex GPT API key', 'database_url', 'development', 'encryption_key', 'environment', 'ignore', 'json', 'jwt_secret_key', 'log_level', 'postgres://', 'postgresql://', 'production', 'staging', 'utf-8', 'yandexgpt-lite']

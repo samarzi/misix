@@ -47,6 +47,8 @@ async def handle_start_command(update: Update, context: ContextTypes.DEFAULT_TYP
         update: Telegram update
         context: Bot context
     """
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    
     user = update.effective_user
     
     welcome_message = f"""
@@ -65,7 +67,23 @@ async def handle_start_command(update: Update, context: ContextTypes.DEFAULT_TYP
 Используйте /help для подробной справки.
 """
     
-    await update.message.reply_text(welcome_message)
+    # Add quick action buttons
+    keyboard = [
+        [
+            InlineKeyboardButton("❓ Помощь", callback_data="help"),
+            InlineKeyboardButton("📋 Задачи", callback_data="tasks")
+        ],
+        [
+            InlineKeyboardButton("💰 Финансы", callback_data="finances"),
+            InlineKeyboardButton("😊 Настроение", callback_data="mood")
+        ],
+        [
+            InlineKeyboardButton("🛌 Я спать", callback_data="sleep")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(welcome_message, reply_markup=reply_markup)
     logger.info(f"User {user.id} started bot")
 
 
@@ -451,6 +469,66 @@ async def handle_reminder_callback(update: Update, context: ContextTypes.DEFAULT
         
     except Exception as e:
         logger.error(f"Failed to handle reminder callback: {e}", exc_info=True)
+        try:
+            await update.callback_query.answer("Произошла ошибка. Попробуйте позже.")
+        except:
+            pass
+
+
+
+async def handle_quick_action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle callback queries from quick action buttons.
+    
+    Args:
+        update: Telegram update with callback query
+        context: Bot context
+    """
+    try:
+        query = update.callback_query
+        await query.answer()
+        
+        action = query.data
+        
+        # Route to appropriate handler
+        if action == "help":
+            await query.message.reply_text(HELP_MESSAGE, parse_mode="Markdown")
+            logger.info(f"User {query.from_user.id} requested help via button")
+            
+        elif action == "tasks":
+            # Create fake update for tasks command
+            fake_update = Update(
+                update_id=update.update_id,
+                message=query.message
+            )
+            await handle_tasks_command(fake_update, context)
+            
+        elif action == "finances":
+            fake_update = Update(
+                update_id=update.update_id,
+                message=query.message
+            )
+            await handle_finances_command(fake_update, context)
+            
+        elif action == "mood":
+            fake_update = Update(
+                update_id=update.update_id,
+                message=query.message
+            )
+            await handle_mood_command(fake_update, context)
+            
+        elif action == "sleep":
+            # Import sleep handler
+            from app.bot.handlers.sleep import handle_sleep_start
+            fake_update = Update(
+                update_id=update.update_id,
+                message=query.message
+            )
+            await handle_sleep_start(fake_update, context)
+        
+        logger.info(f"Processed quick action callback: {action}")
+        
+    except Exception as e:
+        logger.error(f"Failed to handle quick action callback: {e}", exc_info=True)
         try:
             await update.callback_query.answer("Произошла ошибка. Попробуйте позже.")
         except:

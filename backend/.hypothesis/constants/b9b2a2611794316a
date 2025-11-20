@@ -1,0 +1,4 @@
+# file: /Users/samarzi/Desktop/IT/D E M O/misix/backend/app/web/routers/assistant.py
+# hypothesis_version: 6.148.2
+
+[100, 404, 500, '*', '/assistant/chat', '/assistant/messages', '/assistant/sessions', '/send-message', 'Message received', 'Session not found', 'assistant', 'assistant_messages', 'assistant_sessions', 'content', 'created_at', 'error', 'id', 'message', 'role', 'session_id', 'status', 'text', 'title', 'updated_at', 'user', 'user_id']

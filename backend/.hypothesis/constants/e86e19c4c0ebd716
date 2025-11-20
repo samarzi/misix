@@ -1,0 +1,4 @@
+# file: /Users/samarzi/Desktop/IT/D E M O/misix/backend/app/middleware/rate_limit.py
+# hypothesis_version: 6.148.2
+
+[429, ',', '/auth/', '/docs', '/health', '/openapi.json', '/redoc', '0', 'Rate limit exceeded', 'Retry-After', 'X-Forwarded-For', 'X-RateLimit-Limit', 'X-RateLimit-Reset', 'details', 'error', 'message', 'retry_after', 'unknown']

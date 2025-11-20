@@ -43,7 +43,8 @@ def _create_application():
         handle_finances_command,
         handle_mood_command,
         handle_reminders_command,
-        handle_reminder_callback
+        handle_reminder_callback,
+        handle_quick_action_callback
     )
     from .handlers.message import handle_text_message, handle_voice_message
     from .handlers.sleep import handle_sleep_start, handle_sleep_stop
@@ -59,8 +60,9 @@ def _create_application():
     app.add_handler(CommandHandler("sleep", handle_sleep_start))
     app.add_handler(CommandHandler("wake", handle_sleep_stop))
     
-    # Register callback query handlers
+    # Register callback query handlers (order matters - more specific first)
     app.add_handler(CallbackQueryHandler(handle_reminder_callback, pattern="^reminder_"))
+    app.add_handler(CallbackQueryHandler(handle_quick_action_callback, pattern="^(help|tasks|finances|mood|sleep)$"))
     
     # Register message handlers
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))

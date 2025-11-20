@@ -1,0 +1,4 @@
+# file: /Users/samarzi/Desktop/IT/D E M O/misix/backend/app/web/routers/health.py
+# hypothesis_version: 6.148.2
+
+[200, 404, 500, '*', '/health/metrics', 'deleted', 'health_metrics', 'id', 'metric_type', 'metric_value', 'note', 'recorded_at', 'status', 'unit', 'user_id', 'Значение показателя']

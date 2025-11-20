@@ -1,0 +1,4 @@
+# file: /Users/samarzi/Desktop/IT/D E M O/misix/backend/app/middleware/logging.py
+# hypothesis_version: 6.148.2
+
+[400, 500, 1000, 'X-Request-ID', 'client_ip', 'duration_ms', 'method', 'path', 'request_id', 'status_code', 'user_id']

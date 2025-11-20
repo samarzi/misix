@@ -115,14 +115,22 @@ class IntentProcessor:
                 logger.info("Task extraction returned no data")
                 return None
             
-            # Create task
-            task = await self.task_service.create(
-                user_id=user_id,
+            # Create task using proper method
+            from app.models.task import CreateTaskRequest
+            from datetime import datetime
+            
+            # Prepare task request
+            task_request = CreateTaskRequest(
                 title=task_data['title'],
                 description=task_data.get('description'),
                 deadline=task_data.get('deadline'),
                 priority=task_data.get('priority', 'medium'),
                 status='new'
+            )
+            
+            task = await self.task_service.create_task(
+                user_id=user_id,
+                task_data=task_request
             )
             
             logger.info(f"Created task: {task['title']}")
@@ -156,13 +164,21 @@ class IntentProcessor:
                 logger.info("Finance extraction returned no data")
                 return None
             
-            # Create finance record
-            finance = await self.finance_service.create(
-                user_id=user_id,
+            # Create finance record using proper method
+            from app.models.finance import CreateTransactionRequest
+            from datetime import datetime
+            
+            transaction_request = CreateTransactionRequest(
                 amount=finance_data['amount'],
-                type=finance_data['type'],
+                transaction_type=finance_data['type'],
                 category=finance_data.get('category', 'другое'),
-                description=finance_data.get('description')
+                description=finance_data.get('description'),
+                transaction_date=datetime.now()
+            )
+            
+            finance = await self.finance_service.create_transaction(
+                user_id=user_id,
+                transaction_data=transaction_request
             )
             
             logger.info(f"Created finance record: {finance['amount']} ({finance['type']})")
@@ -197,11 +213,17 @@ class IntentProcessor:
                 logger.info("Note extraction returned no data")
                 return None
             
-            # Create note
-            note = await self.note_service.create(
-                user_id=user_id,
+            # Create note using proper method
+            from app.models.note import CreateNoteRequest
+            
+            note_request = CreateNoteRequest(
                 title=note_data['title'],
                 content=note_data['content']
+            )
+            
+            note = await self.note_service.create_note(
+                user_id=user_id,
+                note_data=note_request
             )
             
             logger.info(f"Created note: {note['title']}")

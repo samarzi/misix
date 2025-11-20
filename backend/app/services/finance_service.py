@@ -77,7 +77,7 @@ class FinanceService:
         if "transaction_date" in data and data["transaction_date"]:
             data["transaction_date"] = data["transaction_date"].isoformat()
         
-        transaction = await self.finance_repo.create_transaction(data)
+        transaction = await self.transaction_repo.create(data)
         logger.info(f"Transaction created: {transaction['id']} by user {user_id}")
         
         return transaction

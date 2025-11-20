@@ -1,4 +1,4 @@
-from app.bot import application
+from app.bot import get_application
 import os
 import asyncio
 import logging
@@ -8,8 +8,13 @@ load_dotenv('.env.local')
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Get application instance
+application = None
+
 async def main():
     """Main bot startup function with better error handling."""
+    global application
+    
     print("🤖 Starting MISIX Bot...")
 
     try:
@@ -20,6 +25,14 @@ async def main():
             return
 
         print(f"✅ Bot token configured: {bot_token[:10]}...")
+        
+        # Initialize application
+        application = get_application()
+        if not application:
+            print("❌ Failed to create application!")
+            return
+        
+        print("✅ Application created successfully")
 
         # Determine run mode
         webhook_url = os.getenv('BACKEND_BASE_URL')
